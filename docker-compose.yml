@@ -1,0 +1,88 @@
+# Multi-Agent Support Triage POC — local stack.
+#
+#   docker compose up -d --build        # db, embeddings, backend, frontend
+#   docker compose --profile crawl up crawler   # start the crawler ON DEMAND (Phase 1 ingest)
+#
+# The crawler runs Chromium and is memory-heavy, so it is behind a profile and only
+# started when we actually crawl — keeping the default `up` light on RAM.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: poc
+      POSTGRES_PASSWORD: poc
+      POSTGRES_DB: poc
+    ports:
+      - "5433:5432"   # host 5433 → container 5432 (your local Postgres 12 already owns host 5432)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poc -d poc"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  embeddings:
+    # Text Embeddings Inference — serves bge-small-en-v1.5 over HTTP on port 80.
+    # First boot downloads the model (~130 MB) into the tei-data volume.
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "BAAI/bge-small-en-v1.5"]
+    ports:
+      - "8080:80"
+    volumes:
+      - tei-data:/data
+
+  backend:
+    build: ./backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app   # hot-reload: edits on the host reload uvicorn
+    depends_on:
+      db:
+        condition: service_healthy
+      embeddings:
+        condition: service_started   # /health reports TEI readiness itself while the model loads
+
+  mcp:
+    # MCP server (Streamable HTTP on :9000/mcp) — reuses the backend image + code.
+    build: ./backend
+    command: ["python", "-m", "app.mcp_server"]
+    env_file: .env
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+      embeddings:
+        condition: service_started
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules          # keep container's node_modules, don't shadow with host
+    depends_on:
+      - backend
+
+  crawler:
+    image: unclecode/crawl4ai:latest
+    profiles: ["crawl"]            # on-demand only (see header)
+    environment:
+      # Without a token the server drops to loopback-only (unreachable via the published
+      # port). Setting a token makes it bind the container interface so we can call it.
+      - CRAWL4AI_API_TOKEN=poc-token
+      - HOST=0.0.0.0
+    ports:
+      - "11235:11235"
+    shm_size: "1gb"               # Chromium needs a larger /dev/shm
+
+volumes:
+  pgdata:
+  tei-data:

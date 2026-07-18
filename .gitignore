@@ -1,0 +1,27 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# node
+node_modules/
+dist/
+
+# python caches / build
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+
+# local Claude Code tooling & settings (not part of the POC)
+.claude/
+
+# editors / os
+.idea/
+.vscode/
+.DS_Store
+*.log
