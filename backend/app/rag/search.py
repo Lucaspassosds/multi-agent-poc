@@ -1,0 +1,70 @@
+"""Search — lexical, semantic, and hybrid (RRF) over the `chunks` table.
+
+- Lexical  : Postgres full-text (`ts_rank` over the generated tsvector). Great for exact
+             terms, IDs, error codes — but blind to synonyms/paraphrase.
+- Semantic : pgvector cosine distance (`<=>`) over embeddings. Understands meaning, so it
+             matches paraphrases — but can drift on rare literal tokens.
+- Hybrid   : run both, then fuse the two ranked lists with Reciprocal Rank Fusion (RRF):
+             score(doc) = Σ 1 / (k + rank_in_list). Rank-based, so it needs no score
+             normalization between the two very different scales. Best of both worlds.
+"""
+import asyncio
+
+from app.db import get_pool
+from app.embeddings import embed_one
+
+_SELECT = """
+    SELECT c.id, c.document_id, c.ordinal, c.content,
+           d.title, d.url, d.source_type, d.external_id
+"""
+
+
+async def lexical_search(query: str, k: int = 10) -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch(
+        f"""
+        {_SELECT}, ts_rank(c.fts, plainto_tsquery('english', $1)) AS score
+        FROM chunks c JOIN documents d ON d.id = c.document_id
+        WHERE c.fts @@ plainto_tsquery('english', $1)
+        ORDER BY score DESC
+        LIMIT $2
+        """,
+        query,
+        k,
+    )
+    return [dict(r) for r in rows]
+
+
+async def semantic_search(query: str, k: int = 10) -> list[dict]:
+    qv = await embed_one(query)
+    pool = await get_pool()
+    rows = await pool.fetch(
+        f"""
+        {_SELECT}, 1 - (c.embedding <=> $1) AS score
+        FROM chunks c JOIN documents d ON d.id = c.document_id
+        ORDER BY c.embedding <=> $1
+        LIMIT $2
+        """,
+        qv,
+        k,
+    )
+    return [dict(r) for r in rows]
+
+
+async def hybrid_search(query: str, k: int = 10, rrf_k: int = 60, pool_n: int = 20) -> list[dict]:
+    # Run both retrievals concurrently — a first taste of the parallelism theme.
+    lex, sem = await asyncio.gather(
+        lexical_search(query, pool_n),
+        semantic_search(query, pool_n),
+    )
+
+    scores: dict[int, float] = {}
+    meta: dict[int, dict] = {}
+    for ranked in (lex, sem):
+        for rank, row in enumerate(ranked):
+            cid = row["id"]
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (rrf_k + rank + 1)
+            meta[cid] = row
+
+    top = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:k]
+    return [{**meta[cid], "score": round(scores[cid], 6)} for cid in top]
