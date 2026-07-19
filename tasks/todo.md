@@ -67,7 +67,7 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 - **Runtime:** Docker-first for all architectural deps (fallback `uv` for backend). System Python 3.8 is EOL → containers use 3.12.
 - **Postgres:** Docker `pgvector/pgvector:pg16` (local PG12 has no pgvector).
 - **Embedding model:** `bge-small-en-v1.5` (384-dim, English), served via **TEI** container (backend calls it over HTTP). Upgrade path: `nomic-embed-text-v1.5`.
-- **KB source:** crawl **Stripe public docs** with **Crawl4AI** (url→markdown). Language: **English**.
+- **KB source:** **Stripe docs + Wikipedia payment topics** via HTTP fetch + markdownify (url→markdown). Language: **English** (Stripe needs a US egress/VPN). crawl4ai was evaluated and dropped.
 - **Chunking:** `RecursiveCharacterTextSplitter` from standalone `langchain-text-splitters` (utility only — NOT orchestration).
 - **Past tickets:** ~30 **synthetic** resolved tickets for precedent retrieval.
 - **LLM:** provider abstraction (`LLMProvider`). **Now: Gemini free tier** — all roles on `gemini-flash-lite-latest` (the only model with generous free quota: `flash-latest`→3.5 is 20/day, `pro` 429, `2.0-flash` limit 0). **Target: Claude** (haiku/sonnet/opus tiering) via one `LLM_PROVIDER` swap. See spec 03.
@@ -78,7 +78,7 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 ## Phases (checkable)
 
 ### Phase 0 — Project scaffold & environment  → spec `01-infrastructure.md`
-- [x] `docker-compose.yml`: `db` (pgvector/pg16), `embeddings` (TEI + bge-small-en-v1.5), `crawler` (Crawl4AI, on-demand `crawl` profile), `backend`, `frontend`
+- [x] `docker-compose.yml`: `db` (pgvector/pg16), `embeddings` (TEI + bge-small-en-v1.5), `backend`, `frontend`, `mcp`
 - [x] Backend Dockerfile (`python:3.12-slim` + `uv`), FastAPI app, `GET /health` (checks db + TEI)
 - [x] Frontend Dockerfile (`node:24`), Vite + React + TypeScript placeholder
 - [x] `.env.example` + `.env` + `.gitignore` (ignore `.env`)
@@ -88,12 +88,12 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 
 ### Phase 1 — Ingest (crawl→chunk→embed) & hybrid search  → spec `02-rag.md`
 - [x] Schema: `documents`, `chunks(content, embedding vector(384), fts tsvector)`, GIN + HNSW indexes
-- [x] Crawl4AI client → markdown. ⚠️ Deviation: Stripe docs geolocate to pt-BR from a BR IP (server blocks Accept-Language override), so crawler points at **English Wikipedia payment topics** (Chargeback/3-D Secure/Card fraud/PCI DSS). Crawler needs `CRAWL4AI_API_TOKEN` or it binds loopback-only.
+- [x] Fetch client → markdown (`rag/fetch.py`, HTTP + markdownify). ⚠️ Stripe geo-localizes via client-side JS → crawl4ai's headless browser returns pt-BR (and hangs behind a VPN); server-rendered HTML honors `Accept-Language: en-US`, so we fetch via HTTP with a US egress (VPN). Ingests 4 Stripe docs + 4 Wikipedia payment topics. crawl4ai was evaluated and dropped.
 - [x] Chunking with `RecursiveCharacterTextSplitter` (~800/100)
 - [x] TEI embedding client (chunk text → 384-dim vector)
 - [x] Synthetic past tickets ingested (15 tickets + 8 synthetic KB articles; ~30 was aspirational)
 - [x] `POST /ingest` runs the full pipeline; lexical / semantic / hybrid (RRF) search functions
-- [x] Verify ✅: ingest = 4 crawled + 8 KB + 15 tickets = 612 chunks; paraphrase query → lexical 0 hits, semantic/hybrid nail it
+- [x] Verify ✅: ingest = 8 fetched (4 Stripe EN + 4 Wikipedia) + 8 synthetic KB + 15 tickets = 645 chunks; Stripe docs English (pt_markers=0) & top hits for Stripe queries; paraphrase query → lexical 0 hits, semantic/hybrid nail it
 - 🎓 Concept: embeddings, semantic vs lexical, RRF in ~10 lines, chunking trade-offs.
 
 ### Phase 2 — LLM API foundations: provider abstraction, retry, caching  → spec `03-claude-integration.md`

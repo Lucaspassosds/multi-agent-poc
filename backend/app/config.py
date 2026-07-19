@@ -24,8 +24,6 @@ class Settings(BaseSettings):
     # --- Infrastructure (service-name URLs inside the docker network) ---
     database_url: str = "postgresql://poc:poc@db:5432/poc"
     tei_url: str = "http://embeddings:80"
-    crawl4ai_url: str = "http://crawler:11235"
-    crawl4ai_token: str = "poc-token"   # must match CRAWL4AI_API_TOKEN in docker-compose
     mcp_url: str = "http://mcp:9000/mcp"
     embed_dim: int = 384
 

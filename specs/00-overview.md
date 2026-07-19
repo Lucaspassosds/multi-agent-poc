@@ -3,7 +3,7 @@
 ## Purpose
 A framework-free, multi-agent system that **triages incoming support tickets** and **drafts cited
 resolutions**, built to demonstrate every AI-engineering concept in the requirements. Domain:
-**payments support** (knowledge base = crawled Stripe public docs).
+**payments support** (knowledge base = Stripe docs + Wikipedia payment topics, fetched via HTTP).
 
 ## Non-goals
 - Not a production support desk. No auth, no multi-tenancy, no real ticket system integration.
@@ -16,7 +16,7 @@ resolutions**, built to demonstrate every AI-engineering concept in the requirem
 | 1 | Runtime isolation | **Docker for all architectural deps** (fallback: `uv` for backend) | Reproducible, matches user preference |
 | 2 | Embedding model | **`bge-small-en-v1.5`** (384-dim, English, 512-token) | Light/fast on CPU, TEI-native, no prefix footguns; English KB makes multilingual moot. Upgrade path: `nomic-embed-text-v1.5` |
 | 3 | Embedding serving | **TEI** (HuggingFace Text Embeddings Inference) container | Keeps backend light; HTTP contract |
-| 4 | KB source | **Crawl Stripe public docs** via Crawl4AI → markdown | Realistic billing/refund tickets |
+| 4 | KB source | **Stripe docs (English) + Wikipedia payment topics** via HTTP fetch → markdownify | Real payments content. English Stripe needs a US egress (VPN); crawl4ai browser was evaluated and dropped |
 | 5 | Chunking | **`RecursiveCharacterTextSplitter`** (`langchain-text-splitters`) | User request; standalone, no full framework |
 | 6 | Past-ticket corpus | **~30 synthetic resolved tickets** | Richer retrieval (KB + precedent) |
 | 7 | Language | **English** | Easiest to source docs + demo; English-only KB is why `bge-small` (not a multilingual model) suffices |
@@ -34,10 +34,10 @@ React (Vite) ──HTTP/SSE──▶ FastAPI ──▶ Agent layer (pure Python,
                                           └─ critic (top tier)
                                                │ tools: hybrid_search, get_doc, get_ticket, escalate
    docker services:                            │ (also exposed via MCP server)
-   postgres+pgvector ─ TEI(bge-small-en-v1.5) ─ Crawl4AI ─ backend ─ frontend
+   postgres+pgvector ─ TEI(bge-small-en-v1.5) ─ mcp ─ backend ─ frontend
 ```
 
-Ingest pipeline: **Crawl4AI (url→md) → RecursiveCharacterTextSplitter (md→chunks) → TEI (chunk→vector) → Postgres (embedding + tsvector)**.
+Ingest pipeline: **HTTP fetch + markdownify (url→md) → RecursiveCharacterTextSplitter (md→chunks) → TEI (chunk→vector) → Postgres (embedding + tsvector)**.
 
 ## Demo script (for the review)
 1. Submit: *"I was charged twice for my subscription this month, please refund the duplicate."*

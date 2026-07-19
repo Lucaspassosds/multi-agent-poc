@@ -12,9 +12,10 @@ dependencies = [
     "httpx>=0.28",
     "asyncpg>=0.30",
     "pydantic-settings>=2.7",
-    # Phase 1 — RAG: pgvector type adapter for asyncpg + text splitter
+    # Phase 1 — RAG: pgvector type adapter for asyncpg + text splitter + html->markdown fetcher
     "pgvector>=0.3.6",
     "langchain-text-splitters>=0.3",
+    "markdownify>=0.13",
     # Phase 2 — LLM provider (Gemini now; anthropic added at swap time)
     "google-genai>=1.0",
     # Phase 5 — Model Context Protocol server + client

@@ -75,9 +75,9 @@ async def health():
 
 
 @app.post("/ingest")
-async def ingest(crawl: bool = Query(True), reset: bool = Query(True)):
-    """Build the knowledge base. `crawl=false` skips the crawler (uses only synthetic data)."""
-    return await ingest_all(reset=reset, do_crawl=crawl)
+async def ingest(fetch: bool = Query(True), reset: bool = Query(True)):
+    """Build the knowledge base. `fetch=false` skips HTTP fetch (uses only synthetic data)."""
+    return await ingest_all(reset=reset, do_fetch=fetch)
 
 
 def _trim(rows: list[dict], preview: int = 240) -> list[dict]:

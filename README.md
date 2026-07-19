@@ -18,8 +18,7 @@ observability, evals, retry, parallelism, caching).
 cp .env.example .env        # then paste your GEMINI_API_KEY into .env
 docker compose up -d --build
 ```
-This starts four services: `db`, `embeddings`, `backend`, `frontend`.
-(The `crawler` is **on-demand** — see below.)
+This starts five services: `db`, `embeddings`, `mcp`, `backend`, `frontend`.
 
 ## Verify (Phase 0)
 ```bash
@@ -30,11 +29,8 @@ open http://localhost:5173          # UI placeholder showing live backend health
 > On first boot, `embeddings` downloads the model (~130 MB), so `tei` may report `false`
 > for a minute — `/health` will flip to `true` once it's ready.
 
-## On-demand crawler (Phase 1)
-The crawler runs Chromium and is memory-heavy, so it is **not** started by default:
-```bash
-docker compose --profile crawl up crawler
-```
+> Ingest fetches KB pages over plain HTTP (Stripe docs + Wikipedia). English Stripe content
+> requires a US egress (VPN); from a Brazilian IP Stripe returns Portuguese.
 
 ## Services & ports
 | Service | URL | Purpose |
@@ -43,4 +39,4 @@ docker compose --profile crawl up crawler
 | frontend | http://localhost:5173 | React UI |
 | embeddings (TEI) | http://localhost:8080 | bge-small-en-v1.5 (384-dim) |
 | db | localhost:5433 | Postgres 16 + pgvector (host 5433 to avoid a local Postgres on 5432) |
-| crawler | http://localhost:11235 | Crawl4AI (on-demand) |
+| mcp | http://localhost:9000/mcp | MCP server exposing search tools |
