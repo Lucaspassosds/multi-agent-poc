@@ -68,7 +68,7 @@ curl -X POST 'localhost:8000/ingest?fetch=true&reset=true'   # (curl may be hook
 | `POST /llm/chat` `/llm/stream` `/llm/retry-demo` `/llm/cache-demo` `/llm/classify-demo` | Phase-2 demos |
 | `POST /agent/answer` | single tool-using agent (Phase 3) |
 | `POST /agent/answer-mcp` | same, tools sourced over MCP (Phase 5) |
-| `POST /agent/triage?skill=true|false` | **the full multi-agent pipeline** (Phase 4) |
+| `POST /agent/triage?skill=&search_mode=lexical|semantic|hybrid` | **the full multi-agent pipeline** (Phase 4); synchronous, not SSE (see §9a) |
 | `GET /traces` `/traces/{id}` | list runs / full span tree — tokens, cost, cache-hit %, retries (Phase 6) |
 | `POST /evals/run?retrieval_mode=` `GET /evals` | golden-set eval run (20 cases) + latest results (Phase 7) |
 
@@ -176,20 +176,39 @@ Backend logs: `docker compose logs backend --since 60s`. Backend hot-reloads `ap
 
 ## 9. What's next — Phase 8 (Frontend)
 
-Phases 6-7 are done. Phase 6: `app/observability.py` (`Trace`/`span()` via contextvars — nested spans,
-parallel retrievers overlap correctly on timestamps), cost attribution (`settings.model_costs`), retries
-via `llm/retry.py::last_attempts()`. Phase 7: `app/evals/` (golden set of 20 grounded in `seed_data.py`,
-deterministic metrics + one-call LLM-judge), `POST /evals/run?retrieval_mode=` / `GET /evals` — verified
-hybrid run (20/20, hit-rate 1.0, faithfulness 0.92) vs. a forced-lexical regression run (hit-rate → 0.0,
-faithfulness → 0.35) proving the metrics catch a real quality drop. Also fixed a real free-tier bug along
-the way: Gemini's 15 req/minute cap needed `retry.py` to honor the server's own `RetryInfo.retryDelay`
-instead of a fixed exponential backoff (see §7 gotchas) — a 20-case eval run takes ~11 min because of this
-real rate limit, not a bug.
+Phases 6-7 are done (see status table above). Backend is feature-complete for the whole demo — Phase 8
+is pure frontend, zero backend work expected *unless* the SSE fork below (§9a) is resolved toward "build
+real streaming". `frontend/` is still exactly the **Phase 0 placeholder** (`Dockerfile`, bare
+`src/App.tsx`/`main.tsx`, no routing/UI libs installed) — nothing has been built there yet.
 
-Read `specs/08-frontend.md` next — **must use the `ui-ux-pro-max` skill** per that spec. Goal: a triage
-screen (submit ticket, live agent timeline, cited final answer), the observability dashboard (span
-waterfall over `GET /traces/{id}` — data's fully ready, nothing more to build server-side), and an evals
-report screen (aggregates + per-case drill-down over `GET /evals`). Then Phase 9 (docs & presentation).
+**Read `specs/08-frontend.md` first.** Steps, in order:
+1. **Invoke the `ui-ux-pro-max` skill before writing any UI code** — the spec is explicit that style/
+   palette/font/layout/chart choices must come from it, not be hand-picked. Also load `dataviz` for the
+   span waterfall specifically.
+2. Three screens: **Triage** (submit ticket → live-ish timeline → cited final answer + classification
+   chips), **Observability dashboard** (trace list + span waterfall + cost/cache-hit/retry stats),
+   **Evals report** (aggregates + per-case table with judge reasoning, and a way to trigger/compare the
+   regression demo).
+3. Real endpoints to consume (see table in §4 — **note these differ from spec 08's own endpoint list**,
+   see §9a): `POST /agent/triage?skill=&search_mode=`, `GET /traces`, `GET /traces/{id}`,
+   `POST /evals/run?retrieval_mode=`, `GET /evals`, `POST /ingest`.
+
+### 9a. ⚠️ Open fork to consult the user on before building the Triage screen
+`specs/08-frontend.md` describes the hero screen as SSE-streamed (`POST /tickets/triage` (SSE), "watch
+each step live"). **That endpoint doesn't exist.** What actually exists is `POST /agent/triage` — a
+single synchronous call that runs the whole classify→retrieve→resolve→critique pipeline server-side and
+returns one JSON blob (including `trace_id`) only once it's fully done; the Phase-6 `Trace` is persisted
+atomically in `Trace.__aexit__`, so there's **no partial/live trace visible mid-request** today. Two ways
+to reconcile this — **ask the user before picking one, it's an architecture fork**:
+- **(A) No backend changes (simplest)**: call `/agent/triage`, show a loading state, then render the
+  complete result — and separately fetch `/traces/{trace_id}` to render the waterfall *retrospectively*
+  (after the fact, not "live"). Still legible and demoable, just not truly streaming.
+- **(B) Real streaming**: refactor `orchestrator.triage()` to emit step/span events incrementally (e.g.
+  an async generator + SSE endpoint), so the UI timeline animates as it actually happens. More faithful
+  to the spec/demo script, but a real backend change to code that's already verified — treat it as its
+  own mini-plan, not a drive-by edit.
+
+Then Phase 9 (docs & presentation) is all that's left.
 
 ## 10. Conventions
 
