@@ -2,7 +2,11 @@
 
 > Purpose of this doc: let a fresh agent (or teammate) pick up this project and continue
 > **without re-discovering context**. Read this top-to-bottom, then `specs/00-overview.md`.
-> Last updated after Phase 7 (evals: golden set + deterministic metrics + LLM-judge). Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
+> **Project is complete — 9/9 phases done** (Phase 8 frontend + Phase 9 docs shipped since this
+> doc was first written after Phase 7). See `README.md` for the current run guide/architecture,
+> `docs/CONCEPTS.md` for the concept map, `docs/DEMO_SCRIPT.md` for the presentation outline. The
+> sections below are kept for historical/debugging context (gotchas are still live issues) but the
+> "what's next" section (§9) is stale — there is no next phase. Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
 
 ---
 
@@ -28,7 +32,7 @@ in Postgres/pgvector, the LLM API, context management via subagents, retry, para
 | LLM | **Provider abstraction** (`app/llm/base.py`). **Now: Google Gemini free tier**; **target: Claude** via one env var. |
 | Ingest fetch | Plain **HTTP GET + `markdownify`** (NOT a headless browser — crawl4ai was removed, see §7) |
 
-## 3. Current status — 8 of 9 phases done ✅ (all verified end-to-end)
+## 3. Current status — 9 of 9 phases done ✅ (all verified end-to-end)
 
 | Phase | Status | Where |
 |---|---|---|
@@ -40,8 +44,8 @@ in Postgres/pgvector, the LLM API, context management via subagents, retry, para
 | 5 · MCP server + Skills | ✅ | `app/mcp_server.py`, `mcp_client.py`, `skills.py`, `skills/`, spec 05 |
 | 6 · Observability (spans/traces + cost) | ✅ | `app/observability.py`, `app/api_traces.py`, spec 06 |
 | 7 · Evals (golden set + metrics + judge) | ✅ | `app/evals/*`, `app/api_evals.py`, spec 07 |
-| **8 · Frontend (uses `ui-ux-pro-max` skill)** | ⬜ **NEXT** | spec `08-frontend.md` |
-| 9 · Docs & presentation | ⬜ | — |
+| 8 · Frontend (React UI + real SSE streaming) | ✅ | `frontend/src/*`, `orchestrator.triage_events()`, spec `08-frontend.md` |
+| 9 · Docs & presentation | ✅ | `README.md`, `docs/CONCEPTS.md`, `docs/DEMO_SCRIPT.md` |
 
 Every completed phase has a `[x]` + verification note in `tasks/todo.md`. Trust those.
 

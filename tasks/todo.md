@@ -216,10 +216,30 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
       rather than hand-picked hex values.
 
 ### Phase 9 — Docs & presentation
-- [ ] `README` architecture diagram + run guide
-- [ ] One-page "concept → where in code" map for reviewers
-- [ ] Short talking-track / slides outline for the demo
-- 🎓 Concept: how to present AI-eng work to an engineering audience.
+- [x] `README.md` rewritten: architecture diagram (updated for the real Phase 8 SSE endpoint and
+      UI), full API endpoint table, services/ports, notable design decisions, known limitations,
+      and 3 real screenshots (`docs/screenshots/`) captured from the actual running app.
+- [x] One-page "concept → where in code" map for reviewers: `docs/CONCEPTS.md` — every required
+      concept (including the original Portuguese checklist terms) mapped to its exact
+      file/function and phase.
+- [x] Short talking-track / slides outline for the demo: `docs/DEMO_SCRIPT.md` — timed sections,
+      what to narrate during the live SSE timeline/waterfall/evals regression, plus an
+      "engineering-judgment talking points" section (provider-abstraction constraint, the
+      rate-limit bug found & root-caused during evals, dropping crawl4ai, the Phase-8 streaming
+      fork) — these are the "how I actually work" beats, more useful to an EM than the UI itself.
+- [x] `specs/08-frontend.md` reconciled with what was actually built: added an "Implementation
+      note" documenting the real `/agent/triage/stream` endpoint (spec originally said
+      `/tickets/triage`, which never existed) and the resolved Tailwind/no-chart-library stack
+      questions — specs stay honest as the source of truth, not frozen at time-of-writing.
+- [x] Verify ✅: all three new docs read cleanly end-to-end against the actual shipped code (file
+      paths, function names, and endpoint signatures cross-checked against the real source, not
+      written from memory of the plan).
+- 🎓 Concept: how to present AI-eng work to an engineering audience — a diagram + a code map + a
+      talking track cover three different reviewer needs (orientation, verification, narrative).
+
+## Project complete — 9/9 phases done ✅
+All phases built, verified, and documented. See `README.md` for the run guide, `docs/CONCEPTS.md`
+for the concept map, and `docs/DEMO_SCRIPT.md` for the presentation outline.
 
 ---
 
@@ -232,4 +252,13 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 ---
 
 ## Review (filled in as we complete phases)
-_(empty)_
+All 9 phases shipped and verified against real running services (no phase marked done on
+assumption alone — see each phase's ✅ note for the actual command/output that proved it).
+Two deliberate, user-confirmed deviations from the original plan, both documented at the point
+of decision rather than silently: (1) LLM provider is Gemini free tier, not Claude, because
+Anthropic billing wasn't available — the `LLMProvider` abstraction makes the eventual swap a
+one env var change (`specs/03-claude-integration.md`); (2) ingest fetches via plain HTTP instead
+of the originally-planned `crawl4ai`, dropped after it returned geo-localized (non-English)
+Stripe content and hung behind a VPN (`specs/02-rag.md`). The Phase 8 SSE streaming fork is the
+one case where the user was asked mid-build and chose the more expensive-but-more-honest option
+over the default — see `specs/08-frontend.md`'s Implementation note.

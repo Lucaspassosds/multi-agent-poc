@@ -40,7 +40,8 @@ to drive all UI/UX decisions. Do not hand-pick styling ad hoc.
   with pass/fail and judge reasoning.
 
 ## Backend endpoints consumed
-`POST /tickets/triage` (SSE) · `GET /traces` · `GET /traces/{id}` · `POST /evals/run` · `GET /evals` · `POST /ingest`.
+`POST /agent/triage/stream` (SSE, added in Phase 8 — see Implementation note) · `GET /traces` ·
+`GET /traces/{id}` · `POST /evals/run` · `GET /evals` · `POST /ingest`.
 
 ## 🎓 Concepts
 - Streaming UX for agents: users tolerate latency when they can see progress — surface each step live.
@@ -55,3 +56,28 @@ to drive all UI/UX decisions. Do not hand-pick styling ad hoc.
 
 ## Open questions
 - Tailwind vs plain CSS — defer to the `ui-ux-pro-max` skill's stack/style recommendation at build time.
+  **Resolved: Tailwind** (see Implementation note).
+
+## Implementation note (post-build)
+This spec originally named the streaming endpoint `POST /tickets/triage`, but no such route (or
+any streaming route) existed when Phase 8 started — the only pipeline endpoint was the
+synchronous `POST /agent/triage`, and the Phase-6 `Trace` is persisted atomically at the end of a
+run with no partial state exposed mid-request. This was surfaced to the user as an explicit
+architecture fork before building the Triage screen: (A) no backend changes — render the finished
+result, fetch the trace retrospectively for the waterfall, or (B) refactor the orchestrator for
+real streaming. **The user chose (B).**
+
+`backend/app/agents/orchestrator.py` was refactored into `_run_pipeline(emit=...)` (the same
+pipeline, with an `await emit(...)` bracket around each phase) + `triage_events()` (an async
+generator that runs the pipeline as a background task and fans in events from concurrently
+running phases via an `asyncio.Queue`) + a thin `triage()` wrapper that drains it — so the
+existing synchronous `/agent/triage` and the Phase-7 evals runner are behaviorally unchanged. The
+new `POST /agent/triage/stream` mirrors the existing `GET /llm/stream` SSE convention. Verified
+directly (Python `urllib` probe): all concurrent retriever `step_start` events land at the
+identical timestamp, proving genuine concurrency rather than a client-side animation.
+
+Stack landed on **Tailwind CSS** + **react-router-dom** + plain `fetch` (no TanStack Query — only
+~5 endpoints, no cross-screen cache invalidation needed). No charting library — the span waterfall
+isn't a standard chart-library type (it's a Gantt/trace timeline); it and the eval score meters
+are hand-rolled per the `dataviz` skill's mark specs, using a categorical/status color palette
+validated against the app's dark surface (`ui-ux-pro-max`'s "Modern Dark" style recommendation).
