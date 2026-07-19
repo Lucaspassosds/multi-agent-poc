@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark-only by design (per the ui-ux-pro-max "Modern Dark" style recommendation for this
+   developer-tool audience) — no light-mode variant, no theme toggle. */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+}
+
+/* Chart-only tokens, scoped separately from the app's UI tokens (tailwind.config.js) so
+   button/accent colors and chart-series/status colors never get conflated — per the dataviz
+   skill's convention. Values are the validated-for-#0F172A dark categorical + status palette. */
+.viz {
+  --series-1: #3987e5; /* blue      -> agent (root) */
+  --series-2: #008300; /* green     -> retriever */
+  --series-3: #d55181; /* magenta   -> classifier */
+  --series-4: #c98500; /* yellow    -> planner */
+  --series-5: #199e70; /* aqua      -> resolver */
+  --series-6: #d95926; /* orange    -> critic */
+  --series-7: #9085e9; /* violet    -> tool (spare) */
+  --series-8: #e66767; /* red       -> llm_call (spare) */
+
+  --status-good: #0ca30c;
+  --status-critical: #d03b3b;
+
+  --viz-surface: #0f172a;
+  --viz-gridline: #1f2c47;
+  --viz-text-secondary: #94a3b8;
+  --viz-text-muted: #64748b;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

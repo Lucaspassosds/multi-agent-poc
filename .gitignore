@@ -9,6 +9,7 @@ __pycache__/
 # node
 node_modules/
 dist/
+*.tsbuildinfo
 
 # python caches / build
 *.egg-info/

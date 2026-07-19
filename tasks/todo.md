@@ -171,11 +171,49 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 - 🎓 Concept: why evals matter; deterministic vs model-graded; guarding against regressions.
 
 ### Phase 8 — Frontend polish
-- [ ] Triage screen: submit ticket, live SSE agent timeline, final cited answer
-- [ ] Observability dashboard (from Phase 6)
-- [ ] Evals report (from Phase 7)
-- [ ] Verify: full demo script runs cleanly end-to-end
-- 🎓 Concept: streaming UX for agents; making agent internals legible to humans.
+- [x] Fork resolved with user: spec described `/tickets/triage` as SSE, but only a synchronous
+      `/agent/triage` existed. User chose **real streaming** over the no-backend-change option —
+      `orchestrator.py` refactored into `_run_pipeline(emit=...)` + `triage_events()` (queue-based
+      fan-in from concurrent phases) + a thin `triage()` wrapper (zero behavior change for
+      `/agent/triage` and `evals/runner.py`); new `POST /agent/triage/stream` SSE endpoint in
+      `api_agent.py`, same `data: ...\n\n` + `[DONE]` convention as `GET /llm/stream`. Small
+      additive change: `_retrieve()`'s `cited[]` now carries a `snippet` (needed for the
+      "click → source chunk" citation UI, satisfiable without a new route).
+- [x] Design system sourced from `ui-ux-pro-max` (Modern Dark / Cinema Mobile style, Inter font,
+      dark-only per its own anti-pattern list) + `dataviz` (categorical/status palette validated
+      via `validate_palette.js --mode dark --surface #0F172A` — ALL CHECKS PASS; mark specs for
+      the waterfall/meters/stat-tiles).
+- [x] Triage screen: textarea + presets → `POST /agent/triage/stream` via a hand-rolled
+      fetch-stream SSE parser (`lib/sse.ts`) → live `SpanWaterfall` timeline (classify∥plan →
+      retrieve×N parallel → resolve → critique → revise) updating in real time → final cited
+      answer card (`[Title]` markers → `CitationBadge` popovers) + classification chips.
+- [x] Observability dashboard: trace list (`GET /traces`) → trace detail (`GET /traces/{id}`) →
+      `SpanWaterfall` (same component, adapted from the real span tree) + stat tiles for
+      tokens/cost/cache-hit%/retries.
+- [x] Evals report: run button + retrieval_mode selector (with an in-UI ~11-minute-runtime
+      warning, per the documented free-tier rate-limit gotcha) → `MetricBar`s for the 6
+      aggregates + per-case table with expandable judge reasoning + session-local
+      previous-run comparison for the lexical-vs-hybrid regression demo.
+- [x] Verify ✅: backend — restarted, probed `POST /agent/triage/stream` directly (Python
+      urllib): all 3 retriever `step_start` events land at the identical timestamp (true
+      concurrency, not simulated), full event sequence ends in `final`; confirmed `/agent/triage`
+      and trace persistence are byte-for-byte unchanged after the refactor. Frontend — `tsc -b`
+      clean; headless-Chrome screenshots of all 3 routes show real data rendering correctly
+      (Observability lists real past traces; Evals renders the actual Phase-7 lexical-regression
+      run — hit-rate 0.00, faithfulness 0.35, matching the documented gotcha numbers exactly) with
+      zero console errors beyond a benign React-Router v7 future-flag notice; re-ran the exact
+      `sse.ts` parsing algorithm (Node's fetch/ReadableStream, same Web APIs as the browser)
+      against the live backend and got the correct interleaved event sequence ending in `final`.
+      **Residual gap**: no interactive browser automation (Playwright/chromium-cli) is installed
+      in this environment, so the live click-and-watch-the-timeline-animate interaction in
+      `TriagePage` was verified by construction and layered proxy checks, not by literally
+      clicking the button in a real browser — recommend a quick manual pass in an actual browser
+      before the demo.
+- 🎓 Concept: streaming UX for agents (real per-step SSE events from concurrent async tasks via
+      an `asyncio.Queue` fan-in, not a client-side simulation); making agent internals legible to
+      humans (waterfall timelines, cited answers, judge reasoning) — plus a worked example of a
+      dark, data-dense design system built from a validated categorical/status color palette
+      rather than hand-picked hex values.
 
 ### Phase 9 — Docs & presentation
 - [ ] `README` architecture diagram + run guide

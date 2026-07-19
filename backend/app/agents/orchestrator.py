@@ -13,6 +13,7 @@ Key ideas demonstrated:
 import asyncio
 import json
 import time
+from typing import AsyncGenerator, Awaitable, Callable
 
 from pydantic import BaseModel
 
@@ -47,6 +48,15 @@ class Critique(BaseModel):
     verdict: str          # "approve" | "revise"
     issues: list[str]
     fixes: list[str]
+
+
+# An emit callback lets _run_pipeline report step_start/step_done events as they happen
+# (for the SSE endpoint) without changing what it computes. triage() passes a no-op.
+EmitFn = Callable[[dict], Awaitable[None]]
+
+
+async def _noop_emit(_event: dict) -> None:
+    pass
 
 
 def _accum(total: dict, usage) -> None:
@@ -115,7 +125,11 @@ async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
         result = {
             "subquestion": subquestion,
             "summary": summary,
-            "cited": [{"chunk_id": r["id"], "title": r["title"], "source_type": r["source_type"]} for r in rows],
+            "cited": [
+                {"chunk_id": r["id"], "title": r["title"], "source_type": r["source_type"],
+                 "snippet": r["content"][:300]}
+                for r in rows
+            ],
             "seconds": round(time.time() - t0, 2),
         }
         return result, usage
@@ -157,22 +171,46 @@ async def _critique(ticket, draft, evidences):
         return result, usage
 
 
-async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
-                  search_mode: str = "hybrid") -> dict:
+async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
+                         search_mode: str = "hybrid", emit: EmitFn = _noop_emit) -> dict:
+    """The actual classify->retrieve->resolve->critique->revision pipeline.
+
+    `emit` is called around each phase so a caller (the SSE endpoint, via `triage_events`)
+    can surface real, per-step progress. `triage()` passes the no-op default, so this is
+    the single implementation behind both the synchronous and streaming entrypoints.
+    """
     started = time.time()
     usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
     # Progressive disclosure: load the formatter skill body only when we'll draft a reply.
     skill_body = load_skill("policy-reply-formatter") if use_skill else None
 
+    async def _classify_emit():
+        await emit({"type": "step_start", "step": "classify"})
+        result, u = await _classify(ticket)
+        await emit({"type": "step_done", "step": "classify", "data": result})
+        return result, u
+
+    async def _plan_emit():
+        await emit({"type": "step_start", "step": "plan"})
+        result, u = await _plan(ticket)
+        await emit({"type": "step_done", "step": "plan", "data": result})
+        return result, u
+
+    async def _retrieve_emit(index: int, subquestion: str):
+        await emit({"type": "step_start", "step": "retrieve", "index": index, "subquestion": subquestion})
+        result, u = await _retrieve(subquestion, search_mode)
+        await emit({"type": "step_done", "step": "retrieve", "index": index, "data": result})
+        return result, u
+
     async with Trace("triage") as trace:
         # 1) classify + plan concurrently (independent)
-        (classification, u1), (subqs, u2) = await asyncio.gather(_classify(ticket), _plan(ticket))
+        (classification, u1), (subqs, u2) = await asyncio.gather(_classify_emit(), _plan_emit())
         _accum(usage, u1); _accum(usage, u2)
         questions = subqs["questions"][:max_subquestions]
 
         # 2) retrievers in parallel — measure parallel vs would-be-sequential wall-clock
         t0 = time.time()
-        retrieved = await asyncio.gather(*[_retrieve(q, search_mode) for q in questions])
+        retrieved = await asyncio.gather(*[_retrieve_emit(i, q) for i, q in enumerate(questions)])
         parallel_seconds = round(time.time() - t0, 2)
         evidences = [r for r, _ in retrieved]
         for _, u in retrieved:
@@ -180,13 +218,21 @@ async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
         sequential_estimate = round(sum(e["seconds"] for e in evidences), 2)
 
         # 3) resolve  4) critique  (+ one revision if the critic asks)
+        await emit({"type": "step_start", "step": "resolve"})
         draft, u3 = await _resolve(ticket, classification, evidences, skill_body=skill_body); _accum(usage, u3)
+        await emit({"type": "step_done", "step": "resolve", "data": {"draft": draft}})
+
+        await emit({"type": "step_start", "step": "critique"})
         critique, u4 = await _critique(ticket, draft, evidences); _accum(usage, u4)
+        await emit({"type": "step_done", "step": "critique", "data": critique})
+
         revised = None
         if critique.get("verdict") != "approve":
+            await emit({"type": "step_start", "step": "revise"})
             revised, u5 = await _resolve(ticket, classification, evidences,
                                          fixes=critique.get("fixes"), skill_body=skill_body)
             _accum(usage, u5)
+            await emit({"type": "step_done", "step": "revise", "data": {"revised": revised}})
         final = revised or draft
 
         result = {
@@ -212,3 +258,54 @@ async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
     result["trace_id"] = trace.id
     result["cost_usd"] = trace.total_cost_usd
     return result
+
+
+async def triage_events(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
+                         search_mode: str = "hybrid") -> AsyncGenerator[dict, None]:
+    """Streaming entrypoint: yields step_start/step_done events as the pipeline actually runs,
+    then a final `{"type": "final", "result": ...}` event.
+
+    Runs `_run_pipeline` as a background task so events from concurrent phases (classify∥plan,
+    the parallel retrievers) can be put on the queue as soon as each finishes, rather than
+    batched at the end of an `asyncio.gather`. `asyncio.create_task` copies the current
+    contextvars context at creation time, so the Trace/span contextvars set inside the task
+    still propagate correctly to its own nested `asyncio.gather` children — identical to how
+    the parallel retrievers already relied on this before streaming existed.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def run():
+        try:
+            result = await _run_pipeline(
+                ticket, max_subquestions=max_subquestions, use_skill=use_skill,
+                search_mode=search_mode, emit=queue.put,
+            )
+            await queue.put({"type": "final", "result": result})
+        except Exception as exc:  # noqa: BLE001 - re-raised below, not swallowed
+            await queue.put({"type": "__error__", "exc": exc})
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(run())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if item["type"] == "__error__":
+                raise item["exc"]
+            yield item
+    finally:
+        await task
+
+
+async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
+                  search_mode: str = "hybrid") -> dict:
+    """Synchronous entrypoint (unchanged behavior/signature) — drains `triage_events` and
+    returns the final result, exactly as before streaming existed."""
+    async for event in triage_events(
+        ticket, max_subquestions=max_subquestions, use_skill=use_skill, search_mode=search_mode,
+    ):
+        if event["type"] == "final":
+            return event["result"]
+    raise RuntimeError("triage_events ended without a final event")

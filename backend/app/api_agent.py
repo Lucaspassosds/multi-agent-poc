@@ -1,9 +1,12 @@
 """Phase 3 endpoint — a single tool-using agent that answers a support ticket."""
+import json
+
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.agents.loop import run_agent
-from app.agents.orchestrator import triage
+from app.agents.orchestrator import triage, triage_events
 from app.config import settings
 from app.mcp_client import list_tool_specs, make_dispatch, mcp_session
 
@@ -37,6 +40,29 @@ async def triage_endpoint(
     `skill=false` disables the policy-reply-formatter skill (to show its effect). `search_mode`
     forces the retrievers onto lexical/semantic-only search (Phase 7's regression demo)."""
     return await triage(body.message, use_skill=skill, search_mode=search_mode)
+
+
+@router.post("/triage/stream")
+async def triage_stream_endpoint(
+    body: AgentIn, skill: bool = Query(True),
+    search_mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
+):
+    """Same pipeline as `/agent/triage`, streamed live over SSE (Phase 8): a `step_start`/
+    `step_done` event per phase (classify, plan, retrieve×N, resolve, critique, revise) as it
+    actually happens — including real overlap for the concurrent phases — then one `final`
+    event carrying the same result shape `/agent/triage` returns. Mirrors the `data: ...\\n\\n`
+    + `[DONE]` sentinel convention already used by `GET /llm/stream`. POST (not GET) because the
+    ticket is a body, not a query string, so the client must use fetch-stream, not `EventSource`.
+    """
+    async def gen():
+        try:
+            async for event in triage_events(body.message, use_skill=skill, search_mode=search_mode):
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+        except Exception as exc:  # noqa: BLE001 - surfaced to the client as an SSE event
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @router.post("/answer-mcp")
