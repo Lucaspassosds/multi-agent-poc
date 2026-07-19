@@ -27,5 +27,14 @@ class Settings(BaseSettings):
     mcp_url: str = "http://mcp:9000/mcp"
     embed_dim: int = 384
 
+    # --- Cost attribution (Phase 6 observability) ---
+    # $ per 1M (input, output) tokens — published list price, keyed by model id. This is what the
+    # provider WOULD bill on a paid tier; the Gemini free tier actually bills $0 (same honesty
+    # already used by /llm/cache-demo). Add Claude model ids here when LLM_PROVIDER swaps.
+    model_costs: dict[str, tuple[float, float]] = {
+        "gemini-flash-lite-latest": (0.10, 0.40),
+    }
+    default_model_cost: tuple[float, float] = (0.10, 0.40)  # fallback for an unlisted model id
+
 
 settings = Settings()

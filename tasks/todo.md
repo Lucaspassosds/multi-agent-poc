@@ -128,10 +128,18 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 - 🎓 Concept: what problem MCP solves (tool interoperability); Skills vs raw tools.
 
 ### Phase 6 — Observability
-- [ ] Span model: run → agent steps → tool calls (id, parent, tokens, latency, cache, retries)
-- [ ] Persist traces to Postgres; `GET /traces`, `GET /traces/{id}`
-- [ ] React dashboard: timeline, token/cost breakdown, cache-hit %, retry count
-- [ ] Verify: a triage run produces a complete, inspectable trace
+- [x] Span model: `traces`+`spans` tables (`schema.sql`); `app/observability.py` — `Trace`/`span()` via
+      contextvars, so nested spans (and parallel retrievers) parent correctly with no manual id-threading
+- [x] Persist traces to Postgres; `GET /traces` (list + cache-hit%/retries via join), `GET /traces/{id}` (nested tree)
+- [x] Cost attribution: `settings.model_costs` ($/Mtok, list price) + `cost_usd()`; retries surfaced via
+      `llm/retry.py::last_attempts()` (ContextVar set by `with_retry` on success)
+- [x] Instrumented all 3 agent entrypoints: `orchestrator.triage()` (classifier/planner/retriever×N/resolver/critic
+      spans), `loop.run_agent()` (llm_call + tool:* spans) — used by `/agent/answer`, `/agent/answer-mcp`, `/agent/triage`
+- [~] React dashboard (timeline/waterfall) — deferred to Phase 8 per spec; data is fully ready via `/traces/{id}`
+- [x] Verify ✅: `/agent/triage` → trace with root "triage" span, classifier∥planner, 3 retriever spans whose
+      `started_at` all sit within 50ms of each other and durations overlap ~1.2-1.4s (proves parallelism on
+      timestamps, not just logs); `/agent/answer` → `agent` root → `llm_call`→`tool:hybrid_search`→`llm_call`;
+      `/agent/answer-mcp` traces the same way. `cache_hit_pct=0` (expected — Gemini free tier, same as Phase 2).
 - 🎓 Concept: spans/traces; what to measure in agent systems; cost attribution.
 
 ### Phase 7 — Evals

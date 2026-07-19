@@ -7,6 +7,7 @@ Two failure classes:
 Gemini's free tier returns 429 under load, so this path is exercised for real.
 """
 import asyncio
+import contextvars
 import functools
 import random
 
@@ -14,6 +15,15 @@ from google.genai import errors as genai_errors
 
 _RETRYABLE_CODES = {408, 409, 429, 500, 502, 503, 504}
 _RETRYABLE_EXC_NAMES = {"ConnectError", "ReadTimeout", "ConnectTimeout", "RemoteProtocolError", "TimeoutException"}
+
+# How many retries the most recently completed with_retry() call needed (0 = succeeded first try).
+# Read by app/observability.py right after `await provider.complete(...)` returns, so a span can
+# record retries without with_retry() needing to know about tracing.
+_last_attempts: contextvars.ContextVar[int] = contextvars.ContextVar("last_attempts", default=0)
+
+
+def last_attempts() -> int:
+    return _last_attempts.get()
 
 
 def is_transient(exc: Exception) -> bool:
@@ -31,7 +41,9 @@ def with_retry(max_attempts: int = 4, base_delay: float = 0.5, max_delay: float 
             attempt = 0
             while True:
                 try:
-                    return await fn(*args, **kwargs)
+                    result = await fn(*args, **kwargs)
+                    _last_attempts.set(attempt)
+                    return result
                 except Exception as exc:
                     attempt += 1
                     if attempt >= max_attempts or not is_transient(exc):

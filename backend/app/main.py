@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api_agent import router as agent_router
 from app.api_llm import router as llm_router
+from app.api_traces import router as traces_router
 from app.config import settings
 from app.db import close_pool, get_pool, init_schema
 from app.rag import search as search_mod
@@ -39,6 +40,7 @@ app.add_middleware(
 
 app.include_router(llm_router)
 app.include_router(agent_router)
+app.include_router(traces_router)
 
 
 async def _check_db() -> bool:
