@@ -3,13 +3,33 @@ import { Link } from 'react-router-dom'
 import { getTraces } from '../lib/api'
 import type { TraceListItem } from '../lib/types'
 
+const PAGE_SIZE = 20
+
 export default function ObservabilityPage() {
   const [traces, setTraces] = useState<TraceListItem[] | null>(null)
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    getTraces(20).then((r) => setTraces(r.traces)).catch((e) => setError(String(e)))
+    getTraces(PAGE_SIZE, 0)
+      .then((r) => { setTraces(r.traces); setTotal(r.total) })
+      .catch((e) => setError(String(e)))
   }, [])
+
+  async function loadMore() {
+    if (!traces) return
+    setLoadingMore(true)
+    try {
+      const r = await getTraces(PAGE_SIZE, traces.length)
+      setTraces([...traces, ...r.traces])
+      setTotal(r.total)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   return (
     <div className="viz space-y-4">
@@ -64,6 +84,19 @@ export default function ObservabilityPage() {
               ))}
             </tbody>
           </table>
+          <div className="flex items-center justify-between px-3 py-2 text-xs text-mutedForeground border-t border-border">
+            <span>Showing {traces.length} of {total}</span>
+            {traces.length < total && (
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="rounded-md border border-border px-3 py-1 text-foreground hover:border-accent/50 disabled:opacity-40"
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

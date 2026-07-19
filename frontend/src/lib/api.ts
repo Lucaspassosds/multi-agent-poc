@@ -18,8 +18,8 @@ async function postJSON<T>(path: string, body?: unknown): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export function getTraces(limit = 20): Promise<{ traces: TraceListItem[] }> {
-  return getJSON(`/traces?limit=${limit}`)
+export function getTraces(limit = 20, offset = 0): Promise<{ traces: TraceListItem[]; total: number }> {
+  return getJSON(`/traces?limit=${limit}&offset=${offset}`)
 }
 
 export function getTrace(id: number): Promise<TraceDetail> {

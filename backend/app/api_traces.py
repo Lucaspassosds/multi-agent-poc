@@ -14,7 +14,7 @@ def _pct(numerator: int, denominator: int) -> float:
 
 
 @router.get("")
-async def list_traces(limit: int = Query(20, ge=1, le=200)):
+async def list_traces(limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0)):
     pool = await get_pool()
     rows = await pool.fetch(
         """
@@ -28,10 +28,11 @@ async def list_traces(limit: int = Query(20, ge=1, le=200)):
         LEFT JOIN spans s ON s.trace_id = t.id
         GROUP BY t.id
         ORDER BY t.started_at DESC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         """,
-        limit,
+        limit, offset,
     )
+    total = await pool.fetchval("SELECT count(*) FROM traces")
     return {
         "traces": [
             {
@@ -48,7 +49,8 @@ async def list_traces(limit: int = Query(20, ge=1, le=200)):
                 "retries": r["total_retries"],
             }
             for r in rows
-        ]
+        ],
+        "total": total,
     }
 
 
