@@ -143,11 +143,31 @@ React (Vite)  ──HTTP/SSE──▶  FastAPI  ──▶  Agent layer (pure Pyt
 - 🎓 Concept: spans/traces; what to measure in agent systems; cost attribution.
 
 ### Phase 7 — Evals
-- [ ] Golden set (~20 tickets w/ expected category + reference answer)
-- [ ] Deterministic metrics: classification accuracy, retrieval hit-rate, citation coverage
-- [ ] LLM-as-judge for answer quality (faithfulness, helpfulness)
-- [ ] `POST /evals/run`, `GET /evals`; React report screen
-- [ ] Verify: eval run produces scores; a deliberate regression is caught
+- [x] Golden set: 20 tickets (`app/evals/golden.json`), grounded in the real seeded KB titles/categories
+      so `must_cite`/`expected_category` are checkable against what the pipeline actually produces
+- [x] Deterministic metrics (`app/evals/metrics.py`): classification (category+priority) accuracy,
+      retrieval hit-rate (must_cite title ∈ retrieved evidence), citation coverage (evidence titles
+      that literally appear in the final reply — a documented proxy, not claim-level attribution)
+- [x] LLM-as-judge (`app/evals/judge.py`): one structured call/case → faithfulness + helpfulness
+      (0-1 + reasoning), `settings.model_critic` (flash-lite per the locked free-tier decision)
+- [x] `POST /evals/run?retrieval_mode=lexical|semantic|hybrid`, `GET /evals` (`app/api_evals.py`);
+      reuses `orchestrator.triage()` as-is so each case is also a Phase-6 trace (cost visible via
+      `/traces/{id}`); React report screen deferred to Phase 8, data's ready
+- [x] Regression demo: `search_mode` threaded through `triage()`/`_retrieve()` (dict-dispatch like
+      `main.py`'s `/search`) lets `retrieval_mode=lexical` force degraded retrieval on demand
+- [~] **Found + fixed a real bug while running this at scale**: Gemini free tier caps at 15
+      req/minute; a single `triage()` case alone fires ~7-8 calls, so the golden-set sweep hit sustained
+      429s that the old retry (fixed exponential, 8s cap) couldn't survive. Fixed `app/llm/retry.py` to
+      parse the 429's own `RetryInfo.retryDelay` (e.g. "37s") and sleep that long instead of guessing —
+      root-caused, not a demo-only hack, so it helps every caller. Eval runner also serializes cases
+      (`_CONCURRENCY=1`) since a single case already saturates the quota; each case's own internal
+      parallelism (classify∥plan, 3 retrievers) is untouched.
+- [x] Verify ✅: `POST /evals/run` (hybrid) → 20/20 cases, classification_accuracy=0.80,
+      retrieval_hit_rate=1.0, faithfulness_avg=0.915, helpfulness_avg=0.905, cost≈$0.012 (list price).
+      `retrieval_mode=lexical` → retrieval_hit_rate 1.0→**0.0**, citation_coverage 0.35→**0.0**,
+      faithfulness 0.915→**0.35**, helpfulness 0.905→**0.64** — classification_accuracy unchanged
+      (0.80→0.80, as expected, it doesn't depend on retrieval) — the regression is real and isolated
+      to the right metrics. `GET /evals` matches; sampled `trace_id`s resolve via `/traces/{id}`.
 - 🎓 Concept: why evals matter; deterministic vs model-graded; guarding against regressions.
 
 ### Phase 8 — Frontend polish

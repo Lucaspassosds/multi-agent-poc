@@ -1,0 +1,162 @@
+[
+  {
+    "id": "g-001",
+    "ticket": "I was charged twice for my subscription this month, please refund the duplicate.",
+    "expected_category": "billing",
+    "expected_priority": "high",
+    "reference_answer": "Acknowledge the duplicate charge, confirm two settled charges for the same order, refund the duplicate, and explain the 5-10 business day refund timeline.",
+    "must_cite": ["Duplicate or double charges", "Refund policy and timelines"]
+  },
+  {
+    "id": "g-002",
+    "ticket": "I see a pending charge and a real charge on my statement, is that a double charge?",
+    "expected_category": "billing",
+    "expected_priority": "medium",
+    "reference_answer": "Explain that a pending authorization hold is not a real charge and drops off automatically within 7 business days, so no refund is needed.",
+    "must_cite": ["Duplicate or double charges"]
+  },
+  {
+    "id": "g-003",
+    "ticket": "It's been 8 days and I still haven't gotten my refund back.",
+    "expected_category": "refund",
+    "expected_priority": "medium",
+    "reference_answer": "Card refunds take 5-10 business days to appear; ask the customer to wait until day 10 and provide the refund reference.",
+    "must_cite": ["Refund policy and timelines"]
+  },
+  {
+    "id": "g-004",
+    "ticket": "Can you refund a purchase I made 5 months ago?",
+    "expected_category": "refund",
+    "expected_priority": "low",
+    "reference_answer": "Charges older than 90 days can no longer be refunded to the original card; offer a manual bank transfer instead.",
+    "must_cite": ["Refund policy and timelines"]
+  },
+  {
+    "id": "g-005",
+    "ticket": "My subscription just auto-renewed but I meant to cancel it, please refund and cancel.",
+    "expected_category": "subscription",
+    "expected_priority": "medium",
+    "reference_answer": "Since it's within the 14-day renewal window, cancel the plan and issue a full refund for the current period.",
+    "must_cite": ["Cancelling a subscription", "Refund policy and timelines"]
+  },
+  {
+    "id": "g-006",
+    "ticket": "How do I turn off auto-renewal for my plan?",
+    "expected_category": "subscription",
+    "expected_priority": "low",
+    "reference_answer": "Guide the customer to Billing > Manage plan > Cancel; access continues until the end of the current billing period.",
+    "must_cite": ["Cancelling a subscription"]
+  },
+  {
+    "id": "g-007",
+    "ticket": "My card keeps getting declined even though it works everywhere else.",
+    "expected_category": "payment_failure",
+    "expected_priority": "high",
+    "reference_answer": "Ask the customer to verify their card details and suggest trying another card or contacting their bank's fraud department to authorize the merchant.",
+    "must_cite": ["Failed or declined payments"]
+  },
+  {
+    "id": "g-008",
+    "ticket": "My subscription lapsed because a payment failed, what happened?",
+    "expected_category": "payment_failure",
+    "expected_priority": "medium",
+    "reference_answer": "Explain that failed renewals retry automatically for 7 days (dunning) and suggest updating the card to reactivate the subscription.",
+    "must_cite": ["Failed or declined payments"]
+  },
+  {
+    "id": "g-009",
+    "ticket": "I'm going to dispute this charge with my bank, it's not right.",
+    "expected_category": "dispute",
+    "expected_priority": "high",
+    "reference_answer": "Offer and issue a refund proactively before a chargeback is filed, since chargebacks incur fees and are best avoided.",
+    "must_cite": ["Chargebacks and disputes"]
+  },
+  {
+    "id": "g-010",
+    "ticket": "I already opened a chargeback with my bank but I also want a refund from you.",
+    "expected_category": "dispute",
+    "expected_priority": "high",
+    "reference_answer": "Explain that we cannot issue a refund while a chargeback is open, since that would double-refund the same charge; we will respond to the dispute with evidence instead.",
+    "must_cite": ["Chargebacks and disputes"]
+  },
+  {
+    "id": "g-011",
+    "ticket": "I need to update my card on file before my next renewal.",
+    "expected_category": "subscription",
+    "expected_priority": "low",
+    "reference_answer": "Guide the customer to Billing > Payment methods to add or change the default card used for future renewals.",
+    "must_cite": ["Updating a payment method"]
+  },
+  {
+    "id": "g-012",
+    "ticket": "My old card expired and now my renewal failed, please help.",
+    "expected_category": "payment_failure",
+    "expected_priority": "medium",
+    "reference_answer": "Ask the customer to add a valid card in Billing > Payment methods, then retry the failed invoice from the Billing page.",
+    "must_cite": ["Updating a payment method", "Failed or declined payments"]
+  },
+  {
+    "id": "g-013",
+    "ticket": "I never got a receipt for my last payment.",
+    "expected_category": "billing",
+    "expected_priority": "low",
+    "reference_answer": "Confirm the email address on file and re-send the receipt from the invoice history page.",
+    "must_cite": ["Invoices and receipts"]
+  },
+  {
+    "id": "g-014",
+    "ticket": "Can you add my company's VAT number to my invoice?",
+    "expected_category": "billing",
+    "expected_priority": "low",
+    "reference_answer": "Add the VAT ID in Billing settings and regenerate the invoice so it's included on the download.",
+    "must_cite": ["Invoices and receipts"]
+  },
+  {
+    "id": "g-015",
+    "ticket": "My payment keeps failing and it's asking me to verify with my bank app.",
+    "expected_category": "payment_failure",
+    "expected_priority": "medium",
+    "reference_answer": "Explain that 3-D Secure verification is required by the customer's bank; ensure pop-ups are allowed and complete the prompt to retry.",
+    "must_cite": ["3-D Secure authentication prompts"]
+  },
+  {
+    "id": "g-016",
+    "ticket": "The bank never sends me an authentication prompt so my payment fails every time.",
+    "expected_category": "payment_failure",
+    "expected_priority": "medium",
+    "reference_answer": "Suggest the customer contact their bank to enable online/3-D Secure authentication for the card.",
+    "must_cite": ["3-D Secure authentication prompts"]
+  },
+  {
+    "id": "g-017",
+    "ticket": "I was charged $50 twice on the same order today.",
+    "expected_category": "billing",
+    "expected_priority": "high",
+    "reference_answer": "Confirm both charges settled for the same order and issue a refund for the duplicate charge.",
+    "must_cite": ["Duplicate or double charges"]
+  },
+  {
+    "id": "g-018",
+    "ticket": "I want a refund because I cancelled my plan but haven't used it much this period.",
+    "expected_category": "subscription",
+    "expected_priority": "medium",
+    "reference_answer": "If cancelled within 14 days of the automatic renewal, issue a prorated or full refund for the current period at the agent's discretion.",
+    "must_cite": ["Cancelling a subscription"]
+  },
+  {
+    "id": "g-019",
+    "ticket": "Please refund me to my new card since my old one is closed now.",
+    "expected_category": "refund",
+    "expected_priority": "low",
+    "reference_answer": "Explain that refunds must return to the original payment method; since it's closed, arrange a manual bank transfer instead.",
+    "must_cite": ["Refund policy and timelines"]
+  },
+  {
+    "id": "g-020",
+    "ticket": "What's the deal with 3D secure? My payment declined asking for it.",
+    "expected_category": "payment_failure",
+    "expected_priority": "low",
+    "reference_answer": "Explain 3-D Secure is an extra bank-mandated verification step and ask the customer to retry after completing it.",
+    "must_cite": ["3-D Secure authentication prompts"]
+  }
+]

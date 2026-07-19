@@ -2,7 +2,7 @@
 
 > Purpose of this doc: let a fresh agent (or teammate) pick up this project and continue
 > **without re-discovering context**. Read this top-to-bottom, then `specs/00-overview.md`.
-> Last updated after Phase 6 (observability: spans/traces + cost attribution). Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
+> Last updated after Phase 7 (evals: golden set + deterministic metrics + LLM-judge). Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
 
 ---
 
@@ -28,7 +28,7 @@ in Postgres/pgvector, the LLM API, context management via subagents, retry, para
 | LLM | **Provider abstraction** (`app/llm/base.py`). **Now: Google Gemini free tier**; **target: Claude** via one env var. |
 | Ingest fetch | Plain **HTTP GET + `markdownify`** (NOT a headless browser — crawl4ai was removed, see §7) |
 
-## 3. Current status — 7 of 9 phases done ✅ (all verified end-to-end)
+## 3. Current status — 8 of 9 phases done ✅ (all verified end-to-end)
 
 | Phase | Status | Where |
 |---|---|---|
@@ -39,8 +39,8 @@ in Postgres/pgvector, the LLM API, context management via subagents, retry, para
 | 4 · Multi-agent orchestration | ✅ | `app/agents/orchestrator.py`, spec 04 |
 | 5 · MCP server + Skills | ✅ | `app/mcp_server.py`, `mcp_client.py`, `skills.py`, `skills/`, spec 05 |
 | 6 · Observability (spans/traces + cost) | ✅ | `app/observability.py`, `app/api_traces.py`, spec 06 |
-| **7 · Evals** | ⬜ **NEXT** | spec `07-evals.md` |
-| 8 · Frontend (uses `ui-ux-pro-max` skill) | ⬜ | spec `08-frontend.md` |
+| 7 · Evals (golden set + metrics + judge) | ✅ | `app/evals/*`, `app/api_evals.py`, spec 07 |
+| **8 · Frontend (uses `ui-ux-pro-max` skill)** | ⬜ **NEXT** | spec `08-frontend.md` |
 | 9 · Docs & presentation | ⬜ | — |
 
 Every completed phase has a `[x]` + verification note in `tasks/todo.md`. Trust those.
@@ -70,6 +70,7 @@ curl -X POST 'localhost:8000/ingest?fetch=true&reset=true'   # (curl may be hook
 | `POST /agent/answer-mcp` | same, tools sourced over MCP (Phase 5) |
 | `POST /agent/triage?skill=true|false` | **the full multi-agent pipeline** (Phase 4) |
 | `GET /traces` `/traces/{id}` | list runs / full span tree — tokens, cost, cache-hit %, retries (Phase 6) |
+| `POST /evals/run?retrieval_mode=` `GET /evals` | golden-set eval run (20 cases) + latest results (Phase 7) |
 
 Body for agent endpoints: `{"message": "I was charged twice, please refund the duplicate."}`
 
@@ -103,8 +104,13 @@ mcp_client.py        connects to MCP, lists tools -> neutral ToolSpec, dispatch 
 skills.py            filesystem SKILL.md loader (progressive disclosure)
 skills/policy-reply-formatter/SKILL.md
 observability.py     Trace/span (contextvars) — spans accumulate in memory, persisted on trace exit; cost_usd()
+evals/
+  golden.json        20 hand-written cases grounded in seed_data.py's KB titles
+  metrics.py         deterministic: classification match, retrieval hit-rate, citation coverage
+  judge.py           LLM-as-judge — one structured call/case -> faithfulness + helpfulness
+  runner.py          run_eval(): sequential (see gotcha below) over golden set, persists eval_runs/eval_cases
 api_llm.py           /llm/* router      api_agent.py  /agent/* router     api_traces.py  /traces* router
-main.py              app + /health + /ingest + /search
+api_evals.py         /evals* router     main.py       app + /health + /ingest + /search
 ```
 
 ## 6. Key decisions & why (so you don't relitigate them)
@@ -129,6 +135,13 @@ main.py              app + /health + /ingest + /search
   the original `types.Part` in `ToolCall.raw` and re-sending it (`app/llm/gemini.py`).
 - **Thinking models truncate structured JSON** — reasoning eats `max_output_tokens`. Fix: `thinking_budget=0`
   for structured/JSON calls (`orchestrator._json`, provider guards it to models that support it).
+- **Free tier is also capped at 15 requests/MINUTE** (not just the daily caps above) — found running
+  Phase 7's 20-case eval sweep: a single `triage()` case alone fires ~7-8 calls in a few seconds, so back-
+  to-back cases blew through it fast. The old retry (fixed exponential, 8s max) couldn't survive a real
+  quota window. Fixed at the root in `app/llm/retry.py`: parse the 429's own `RetryInfo.retryDelay` (e.g.
+  "37s") and sleep that long +jitter instead of guessing — benefits every caller, not just evals. The evals
+  runner also runs cases sequentially (`_CONCURRENCY=1` in `app/evals/runner.py`) since one case alone
+  nearly saturates the quota; a 20-case eval run now takes **~11 minutes** for this reason — expected, not a bug.
 
 **Infra / networking:**
 - **DB is on host port 5433** (local PG12 owns 5432). Inside Docker it's still `db:5432`.
@@ -161,19 +174,22 @@ Backend logs: `docker compose logs backend --since 60s`. Backend hot-reloads `ap
 **restart after changing imports/lifespan**; **rebuild only when `pyproject.toml` deps change**
 (`docker compose build backend`).
 
-## 9. What's next — Phase 7 (Evals)
+## 9. What's next — Phase 8 (Frontend)
 
-Phase 6 is done: `app/observability.py` (`Trace`/`span()` via contextvars — nested spans, parallel
-retrievers overlap correctly on timestamps), cost attribution (`settings.model_costs`, list-price $/Mtok,
-Gemini free tier bills $0 same as `/llm/cache-demo`), retries surfaced via `llm/retry.py::last_attempts()`.
-All 3 agent entrypoints return `trace_id` + `cost_usd`; `GET /traces` / `GET /traces/{id}` are live. The
-React dashboard (waterfall) is deferred to Phase 8 — data's ready.
+Phases 6-7 are done. Phase 6: `app/observability.py` (`Trace`/`span()` via contextvars — nested spans,
+parallel retrievers overlap correctly on timestamps), cost attribution (`settings.model_costs`), retries
+via `llm/retry.py::last_attempts()`. Phase 7: `app/evals/` (golden set of 20 grounded in `seed_data.py`,
+deterministic metrics + one-call LLM-judge), `POST /evals/run?retrieval_mode=` / `GET /evals` — verified
+hybrid run (20/20, hit-rate 1.0, faithfulness 0.92) vs. a forced-lexical regression run (hit-rate → 0.0,
+faithfulness → 0.35) proving the metrics catch a real quality drop. Also fixed a real free-tier bug along
+the way: Gemini's 15 req/minute cap needed `retry.py` to honor the server's own `RetryInfo.retryDelay`
+instead of a fixed exponential backoff (see §7 gotchas) — a 20-case eval run takes ~11 min because of this
+real rate limit, not a bug.
 
-Read `specs/07-evals.md` next. Goal: a golden set (~20 tickets w/ expected category + reference answer),
-deterministic metrics (classification accuracy, retrieval hit-rate, citation coverage), LLM-as-judge for
-answer quality, `POST /evals/run` + `GET /evals`. Quota note: fires ~20+ judge calls; fine on flash-lite
-(20 req/DAY cap doesn't apply — that's `flash-latest`, not `flash-lite-latest`). Then Phase 8 (frontend —
-**must use the `ui-ux-pro-max` skill**, per spec 08): triage screen + observability dashboard + evals report.
+Read `specs/08-frontend.md` next — **must use the `ui-ux-pro-max` skill** per that spec. Goal: a triage
+screen (submit ticket, live agent timeline, cited final answer), the observability dashboard (span
+waterfall over `GET /traces/{id}` — data's fully ready, nothing more to build server-side), and an evals
+report screen (aggregates + per-case drill-down over `GET /evals`). Then Phase 9 (docs & presentation).
 
 ## 10. Conventions
 

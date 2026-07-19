@@ -63,3 +63,43 @@ CREATE TABLE IF NOT EXISTS spans (
 
 CREATE INDEX IF NOT EXISTS spans_trace_idx  ON spans (trace_id);
 CREATE INDEX IF NOT EXISTS spans_parent_idx ON spans (parent_id);
+
+-- Phase 7 schema: one eval_runs row per `POST /evals/run`, one eval_cases row per golden-set case.
+-- See app/evals/runner.py for the writer.
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id                       BIGSERIAL PRIMARY KEY,
+    started_at               TIMESTAMPTZ NOT NULL,
+    ended_at                 TIMESTAMPTZ NOT NULL,
+    retrieval_mode           TEXT        NOT NULL,   -- 'lexical' | 'semantic' | 'hybrid'
+    n_cases                  INT         NOT NULL,
+    classification_accuracy  NUMERIC,
+    priority_accuracy        NUMERIC,
+    retrieval_hit_rate       NUMERIC,
+    citation_coverage        NUMERIC,
+    faithfulness_avg         NUMERIC,
+    helpfulness_avg          NUMERIC,
+    total_cost_usd           NUMERIC
+);
+
+CREATE TABLE IF NOT EXISTS eval_cases (
+    id                    BIGSERIAL PRIMARY KEY,
+    run_id                BIGINT REFERENCES eval_runs(id) ON DELETE CASCADE,
+    golden_id             TEXT NOT NULL,
+    ticket                TEXT NOT NULL,
+    trace_id              BIGINT REFERENCES traces(id),
+    predicted_category    TEXT,
+    expected_category     TEXT,
+    category_correct      BOOLEAN,
+    predicted_priority    TEXT,
+    expected_priority     TEXT,
+    priority_correct      BOOLEAN,
+    retrieval_hit         BOOLEAN,
+    citation_coverage     NUMERIC,
+    faithfulness_score    NUMERIC,
+    faithfulness_reasoning TEXT,
+    helpfulness_score     NUMERIC,
+    helpfulness_reasoning TEXT,
+    final_reply           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS eval_cases_run_idx ON eval_cases (run_id);

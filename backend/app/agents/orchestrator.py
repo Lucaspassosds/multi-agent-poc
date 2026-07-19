@@ -20,8 +20,17 @@ from app.config import settings
 from app.llm.base import user
 from app.llm.factory import get_provider
 from app.observability import Trace, span
-from app.rag.search import hybrid_search
+from app.rag import search as search_mod
 from app.skills import load_skill
+
+# Retrieval mode dispatch — same dict-dispatch pattern as main.py's /search. Defaulting a
+# retriever to "lexical" or "semantic" lets Phase 7 evals demonstrate a deliberate regression
+# (hybrid is strictly better) without duplicating the orchestrator flow.
+_SEARCH_FNS = {
+    "lexical": search_mod.lexical_search,
+    "semantic": search_mod.semantic_search,
+    "hybrid": search_mod.hybrid_search,
+}
 
 
 class Classification(BaseModel):
@@ -89,11 +98,11 @@ async def _plan(ticket: str):
         return result, usage
 
 
-async def _retrieve(subquestion: str):
-    """A retriever subagent: hybrid_search, then summarize into a compact, cited evidence note."""
+async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
+    """A retriever subagent: search (hybrid by default), then summarize into a compact, cited evidence note."""
     async with span("retriever", "subagent", model=settings.model_classify) as s:
         t0 = time.time()
-        rows = await hybrid_search(subquestion, k=4)
+        rows = await _SEARCH_FNS[search_mode](subquestion, k=4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
         summary, usage = await _text(
             settings.model_classify,
@@ -148,7 +157,8 @@ async def _critique(ticket, draft, evidences):
         return result, usage
 
 
-async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True) -> dict:
+async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
+                  search_mode: str = "hybrid") -> dict:
     started = time.time()
     usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
     # Progressive disclosure: load the formatter skill body only when we'll draft a reply.
@@ -162,7 +172,7 @@ async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True)
 
         # 2) retrievers in parallel — measure parallel vs would-be-sequential wall-clock
         t0 = time.time()
-        retrieved = await asyncio.gather(*[_retrieve(q) for q in questions])
+        retrieved = await asyncio.gather(*[_retrieve(q, search_mode) for q in questions])
         parallel_seconds = round(time.time() - t0, 2)
         evidences = [r for r, _ in retrieved]
         for _, u in retrieved:

@@ -28,11 +28,15 @@ async def answer(body: AgentIn):
 
 
 @router.post("/triage")
-async def triage_endpoint(body: AgentIn, skill: bool = Query(True)):
+async def triage_endpoint(
+    body: AgentIn, skill: bool = Query(True),
+    search_mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
+):
     """Full multi-agent pipeline: classify → retrieve (parallel) → resolve → critique → final.
 
-    `skill=false` disables the policy-reply-formatter skill (to show its effect)."""
-    return await triage(body.message, use_skill=skill)
+    `skill=false` disables the policy-reply-formatter skill (to show its effect). `search_mode`
+    forces the retrievers onto lexical/semantic-only search (Phase 7's regression demo)."""
+    return await triage(body.message, use_skill=skill, search_mode=search_mode)
 
 
 @router.post("/answer-mcp")
