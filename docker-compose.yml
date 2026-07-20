@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: poc
       POSTGRES_DB: poc
     ports:
-      - "5433:5432"   # host 5433 → container 5432 (your local Postgres 12 already owns host 5432)
+      - "127.0.0.1:5433:5432"   # host 5433 → container 5432 (your local Postgres 12 already owns host 5432); loopback-only
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +40,7 @@ services:
       - "1.1.1.1"
       - "8.8.8.8"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend/app:/app/app   # hot-reload: edits on the host reload uvicorn
     depends_on:
@@ -55,7 +55,7 @@ services:
     command: ["python", "-m", "app.mcp_server"]
     env_file: .env
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - ./backend/app:/app/app
     depends_on:

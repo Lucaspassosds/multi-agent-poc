@@ -35,8 +35,8 @@ def list_skills() -> list[dict]:
 
 def load_skill(name: str) -> str | None:
     """Full skill body — loaded on demand when a task calls for it."""
-    path = _SKILLS_DIR / name / "SKILL.md"
-    if not path.exists():
+    path = (_SKILLS_DIR / name / "SKILL.md").resolve()
+    if _SKILLS_DIR.resolve() not in path.parents or not path.exists():
         return None
     _, body = _parse(path.read_text())
     return body
