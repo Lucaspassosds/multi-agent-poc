@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api_agent import router as agent_router
 from app.api_evals import router as evals_router
 from app.api_llm import router as llm_router
+from app.api_tickets import router as tickets_router
 from app.api_traces import router as traces_router
 from app.config import settings
 from app.db import close_pool, get_pool, init_schema
@@ -50,6 +51,7 @@ app.add_middleware(
 app.include_router(llm_router)
 app.include_router(agent_router)
 app.include_router(traces_router)
+app.include_router(tickets_router)
 app.include_router(evals_router)
 
 
