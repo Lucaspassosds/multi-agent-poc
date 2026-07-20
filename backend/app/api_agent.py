@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.agents.loop import run_agent
 from app.agents.orchestrator import triage, triage_events
+from app.api_tickets import save_ticket
 from app.config import settings
 from app.mcp_client import list_tool_specs, make_dispatch, mcp_session
 
@@ -23,6 +24,7 @@ _SYSTEM = (
 
 class AgentIn(BaseModel):
     message: str
+    session_id: str | None = None  # anonymous per-visitor history key; None → don't persist
 
 
 @router.post("/answer")
@@ -55,11 +57,24 @@ async def triage_stream_endpoint(
     ticket is a body, not a query string, so the client must use fetch-stream, not `EventSource`.
     """
     async def gen():
+        final_result = None
+        errored = False
         try:
             async for event in triage_events(body.message, use_skill=skill, search_mode=search_mode):
+                if event.get("type") == "final":
+                    final_result = event.get("result")
                 yield f"data: {json.dumps(event, default=str)}\n\n"
         except Exception as exc:  # noqa: BLE001 - surfaced to the client as an SSE event
+            errored = True
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        # Persist only a completed, successful run — never on error, never without a session.
+        if not errored and final_result is not None and body.session_id:
+            try:
+                await save_ticket(body.session_id, final_result)
+            except Exception as exc:  # noqa: BLE001 - persistence must not break the stream
+                print(f"[tickets] failed to persist ticket: {exc}")
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
