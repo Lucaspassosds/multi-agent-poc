@@ -174,3 +174,11 @@ export interface EvalRun {
   total_cost_usd: number
   cases: EvalCase[]
 }
+
+export interface TicketListItem {
+  id: number
+  ticket_text: string
+  category: string | null
+  trace_id: number | null
+  created_at: string
+}

@@ -1,4 +1,4 @@
-import type { EvalRun, RetrievalMode, TraceDetail, TraceListItem } from './types'
+import type { EvalRun, RetrievalMode, TicketListItem, TraceDetail, TraceListItem, TriageResult } from './types'
 
 export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
@@ -24,6 +24,18 @@ export function getTraces(limit = 20, offset = 0): Promise<{ traces: TraceListIt
 
 export function getTrace(id: number): Promise<TraceDetail> {
   return getJSON(`/traces/${id}`)
+}
+
+export function getTickets(
+  sessionId: string,
+  limit = 30,
+  offset = 0,
+): Promise<{ tickets: TicketListItem[]; total: number }> {
+  return getJSON(`/tickets?session_id=${encodeURIComponent(sessionId)}&limit=${limit}&offset=${offset}`)
+}
+
+export function getTicket(id: number): Promise<TriageResult> {
+  return getJSON(`/tickets/${id}`)
 }
 
 export function getEvals(): Promise<EvalRun> {

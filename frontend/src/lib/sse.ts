@@ -6,7 +6,7 @@ import type { RetrievalMode, TriageEvent } from './types'
 // backend's `data: ...\n\n` framing (same convention as GET /llm/stream), stopping at `[DONE]`.
 export async function* streamTriage(
   message: string,
-  opts: { skill?: boolean; searchMode?: RetrievalMode } = {},
+  opts: { skill?: boolean; searchMode?: RetrievalMode; sessionId?: string } = {},
 ): AsyncGenerator<TriageEvent> {
   const params = new URLSearchParams()
   if (opts.skill !== undefined) params.set('skill', String(opts.skill))
@@ -15,7 +15,7 @@ export async function* streamTriage(
   const res = await fetch(`${API_BASE}/agent/triage/stream?${params}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: opts.sessionId }),
   })
   if (!res.ok || !res.body) {
     throw new Error(`triage stream failed: ${res.status} ${await res.text().catch(() => '')}`)
