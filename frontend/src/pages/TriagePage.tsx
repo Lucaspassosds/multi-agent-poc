@@ -79,7 +79,7 @@ export default function TriagePage() {
         if (event.type === 'step_start') {
           const id = event.step === 'retrieve' ? `retrieve-${event.index}` : event.step
           const label = event.step === 'retrieve'
-            ? `Retrieve — ${event.subquestion?.slice(0, 18) ?? `#${event.index}`}`
+            ? `Retrieve — ${event.subquestion ?? `#${event.index}`}`
             : STEP_DISPLAY_LABEL[event.step]
           rowStart.current.set(id, elapsed())
           setRows((prev) => upsertRow(prev, {

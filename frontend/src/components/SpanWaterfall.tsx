@@ -48,8 +48,12 @@ export default function SpanWaterfall({ rows }: { rows: WaterfallRow[] }) {
           const isPending = row.duration == null
           const isSelected = selected === row.id
           return (
-            <div key={row.id} className="flex items-center gap-3" style={{ paddingLeft: row.depth * 16 }}>
-              <span className="w-28 shrink-0 text-xs text-[var(--viz-text-secondary)] truncate" title={row.label}>
+            <div key={row.id} className="flex items-center gap-3">
+              <span
+                className="w-28 shrink-0 text-xs text-[var(--viz-text-secondary)] truncate"
+                style={{ paddingLeft: row.depth * 16 }}
+                title={row.label}
+              >
                 {row.label}
               </span>
               <button
