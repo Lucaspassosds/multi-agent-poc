@@ -9,7 +9,7 @@ import { getTicket, getTickets, getTrace } from '../lib/api'
 import { getOrCreateSessionId } from '../lib/session'
 import { streamTriage } from '../lib/sse'
 import type { CitedChunk, Classification, TicketListItem, TriageResult } from '../lib/types'
-import { seriesKeyForName, spanTreeToRows, type WaterfallRow } from '../lib/waterfall'
+import { seriesKeyForName, triageRestoreRows, type WaterfallRow } from '../lib/waterfall'
 
 const PRESETS = [
   'I was charged twice for my subscription this month, please refund the duplicate.',
@@ -104,7 +104,7 @@ export default function TriagePage() {
       setClassification(res.classification)
       if (res.trace_id) {
         const trace = await getTrace(res.trace_id)
-        setRows(spanTreeToRows(trace))
+        setRows(triageRestoreRows(trace, res.evidence))
       }
     } catch (e) {
       setError(String(e))

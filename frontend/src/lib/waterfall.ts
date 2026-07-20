@@ -1,4 +1,4 @@
-import type { SpanNode, TraceDetail } from './types'
+import type { Evidence, SpanNode, TraceDetail } from './types'
 
 // The fixed, ordered identity mapping for span/step coloring (dataviz: "assign categorical hues
 // in fixed order, never cycled"). Shared by both the live SSE timeline (Triage) and the
@@ -79,4 +79,59 @@ export function spanTreeToRows(trace: TraceDetail): WaterfallRow[] {
   }
   walk(trace.spans, 0)
   return rows
+}
+
+// Maps a raw backend span name to the same plain-language vocabulary the live SSE timeline
+// uses (TriagePage's STEP_DISPLAY_LABEL) — kept here, not there, since this is span-tree input,
+// not step input. 'retriever' is handled separately below (it needs the subquestion text).
+const RESTORE_LABEL: Record<string, string> = {
+  classifier: 'Classify',
+  planner: 'Plan',
+  resolver: 'Resolve',
+  critic: 'Critique',
+  'resolver:revision': 'Resolve (revision)',
+}
+
+/** Rebuilds a restored ticket's Agent Timeline to look exactly like the live SSE view instead of
+ * the raw span tree spanTreeToRows() renders for Observability (which correctly keeps the root
+ * orchestrator span and raw span names — that view is unrelated and unaffected by this one).
+ *
+ * - Drops the root `triage` span entirely (live has no top-level row).
+ * - Relabels each child through the same vocabulary the live view uses.
+ * - `retriever` children get their subquestion text back from `evidence`, matched positionally —
+ *   spans are recorded in the same execution, in the same order, as the evidence array that
+ *   produced them (see backend/app/observability.py: spans append at span-entry time; the
+ *   retriever coroutines are gathered in subquestion order, same as `evidence`).
+ * - Keeps real server-side timings (duration, and startOffset relative to the trace's own start).
+ */
+export function triageRestoreRows(trace: TraceDetail, evidence: Evidence[]): WaterfallRow[] {
+  const traceStart = new Date(trace.started_at).getTime()
+  const root = trace.spans[0]
+  const children = root ? root.children : trace.spans
+  let retrieveIndex = 0
+
+  return children.map((s: SpanNode) => {
+    const startOffset = (new Date(s.started_at).getTime() - traceStart) / 1000
+    const isRetriever = s.name === 'retriever'
+    const label = isRetriever
+      ? `Retrieve — ${evidence[retrieveIndex]?.subquestion ?? `#${retrieveIndex}`}`
+      : RESTORE_LABEL[s.name] ?? s.name
+    if (isRetriever) retrieveIndex += 1
+
+    return {
+      id: String(s.id),
+      label,
+      seriesKey: seriesKeyForName(s.name),
+      status: s.error ? 'error' : 'ok',
+      depth: isRetriever ? 1 : 0,
+      startOffset,
+      duration: s.duration_seconds,
+      model: s.model,
+      inputTokens: s.input_tokens,
+      outputTokens: s.output_tokens,
+      cacheReadTokens: s.cache_read_tokens,
+      retries: s.retries,
+      error: s.error,
+    }
+  })
 }
