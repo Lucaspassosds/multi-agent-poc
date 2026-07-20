@@ -11,10 +11,13 @@ Pair with `docs/CONCEPTS.md` if the audience wants to go deeper on any one topic
   wait ~11 minutes live — see step 4.
 
 ## 1. Framing (30s)
-- "A framework-free multi-agent system that triages support tickets and drafts a cited reply."
+- "A framework-free multi-agent system that triages **Stripe payments support tickets** — refunds,
+  disputes, failed charges, subscription billing — and drafts a cited reply grounded in real
+  Stripe documentation." Name the domain explicitly and early; it's the difference between "an AI
+  agent demo" and a concrete, scoped product.
 - One line on *why framework-free*: to actually show the mechanics — orchestration, context
   management, parallelism — instead of hiding them behind LangChain/CrewAI abstractions.
-- Point at the architecture diagram in the README for 10 seconds, then go live.
+- Point at the architecture diagram and the "Domain" table in the README for 10 seconds, then go live.
 
 ## 2. Live demo — Triage screen (2-3 min)
 - Submit the preset: *"I was charged twice for my subscription this month, please refund the

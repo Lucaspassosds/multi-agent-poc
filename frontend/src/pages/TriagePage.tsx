@@ -1,6 +1,8 @@
+import { CheckCircle, PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
 import { Fragment, useRef, useState } from 'react'
 import ClassificationChips from '../components/ClassificationChips'
 import CitationBadge from '../components/CitationBadge'
+import HowItWorks from '../components/HowItWorks'
 import SpanWaterfall from '../components/SpanWaterfall'
 import { streamTriage } from '../lib/sse'
 import type { CitedChunk, Classification, TriageResult } from '../lib/types'
@@ -12,13 +14,24 @@ const PRESETS = [
   'I want to cancel my subscription and get a prorated refund.',
 ]
 
-const STEP_LABEL: Record<string, string> = {
+// Maps an SSE step to the backend span-name vocabulary seriesKeyForName() understands, purely
+// for color lookup — kept separate from the plain-language STEP_DISPLAY_LABEL shown to the user.
+const STEP_SERIES_NAME: Record<string, string> = {
   classify: 'classifier',
   plan: 'planner',
   retrieve: 'retriever',
   resolve: 'resolver',
   critique: 'critic',
   revise: 'resolver:revision',
+}
+
+// Plain-language row labels — match the "How it works" step cards' titles exactly.
+const STEP_DISPLAY_LABEL: Record<string, string> = {
+  classify: 'Classify',
+  plan: 'Plan',
+  resolve: 'Resolve',
+  critique: 'Critique',
+  revise: 'Resolve (revision)',
 }
 
 function upsertRow(rows: WaterfallRow[], row: WaterfallRow): WaterfallRow[] {
@@ -66,13 +79,13 @@ export default function TriagePage() {
         if (event.type === 'step_start') {
           const id = event.step === 'retrieve' ? `retrieve-${event.index}` : event.step
           const label = event.step === 'retrieve'
-            ? (event.subquestion?.slice(0, 24) ?? `retrieve #${event.index}`)
-            : STEP_LABEL[event.step]
+            ? `Retrieve — ${event.subquestion?.slice(0, 18) ?? `#${event.index}`}`
+            : STEP_DISPLAY_LABEL[event.step]
           rowStart.current.set(id, elapsed())
           setRows((prev) => upsertRow(prev, {
             id,
             label,
-            seriesKey: seriesKeyForName(event.step === 'retrieve' ? 'retriever' : STEP_LABEL[event.step]),
+            seriesKey: seriesKeyForName(event.step === 'retrieve' ? 'retriever' : STEP_SERIES_NAME[event.step]),
             status: 'running',
             depth: event.step === 'retrieve' ? 1 : 0,
             startOffset: elapsed(),
@@ -83,8 +96,8 @@ export default function TriagePage() {
           const start = rowStart.current.get(id) ?? elapsed()
           setRows((prev) => upsertRow(prev, {
             id,
-            label: prev.find((r) => r.id === id)?.label ?? event.step,
-            seriesKey: prev.find((r) => r.id === id)?.seriesKey ?? seriesKeyForName(event.step),
+            label: prev.find((r) => r.id === id)?.label ?? STEP_DISPLAY_LABEL[event.step] ?? event.step,
+            seriesKey: prev.find((r) => r.id === id)?.seriesKey ?? seriesKeyForName(STEP_SERIES_NAME[event.step] ?? event.step),
             status: 'ok',
             depth: event.step === 'retrieve' ? 1 : 0,
             startOffset: start,
@@ -106,14 +119,25 @@ export default function TriagePage() {
 
   return (
     <div className="space-y-6">
-      <section>
-        <h1 className="text-lg font-semibold text-foreground mb-3">Submit a ticket</h1>
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">Stripe payments support triage</h1>
+        <p className="mt-1 text-sm text-mutedForeground">
+          Submit a Stripe payments support ticket — refunds, disputes, failed charges, subscription
+          billing — and watch a multi-agent pipeline classify, research (grounded in real Stripe
+          documentation), draft, and self-check a reply in real time.
+        </p>
+      </div>
+
+      <HowItWorks />
+
+      <section className="rounded-lg border border-border bg-primary p-4">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-mutedForeground">Submit a ticket</h2>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={4}
           placeholder="Describe the customer's issue…"
-          className="w-full rounded-lg border border-border bg-primary p-3 text-sm text-foreground placeholder:text-mutedForeground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-mutedForeground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         <div className="mt-2 flex flex-wrap gap-2">
           {PRESETS.map((p) => (
@@ -131,8 +155,9 @@ export default function TriagePage() {
           type="button"
           disabled={!message.trim() || running}
           onClick={() => submit(message)}
-          className="mt-4 rounded-md bg-accent px-4 py-2 text-sm font-medium text-background disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-4 inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-background disabled:cursor-not-allowed disabled:opacity-40"
         >
+          <PaperPlaneTilt size={16} weight="bold" />
           {running ? 'Running…' : 'Submit ticket'}
         </button>
       </section>
@@ -145,7 +170,10 @@ export default function TriagePage() {
 
       {rows.length > 0 && (
         <section className="rounded-lg border border-border bg-primary/30 p-4">
-          <h2 className="text-sm font-medium text-foreground mb-3">Agent timeline</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Waveform size={16} weight="regular" className="text-accent" />
+            Agent timeline
+          </h2>
           <SpanWaterfall rows={rows} />
         </section>
       )}
@@ -158,8 +186,11 @@ export default function TriagePage() {
         <section className="space-y-3">
           <ClassificationChips classification={result.classification} />
           <div className="rounded-lg border border-border bg-primary p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-medium text-foreground">Final reply</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <CheckCircle size={16} weight="regular" className="text-accent" />
+                Final reply
+              </h2>
               <span className="text-xs text-mutedForeground tabular-nums">
                 {result.total_seconds}s · ${result.cost_usd.toFixed(6)} · {result.parallelism.speedup}× parallel speedup
               </span>

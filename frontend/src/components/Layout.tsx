@@ -11,8 +11,11 @@ export default function Layout() {
     <div className="min-h-dvh flex flex-col">
       <header className="border-b border-border">
         <nav className="max-w-6xl mx-auto flex items-center gap-1 px-4 py-3">
-          <span className="mr-4 text-sm font-semibold tracking-wide text-foreground">
-            Support Triage POC
+          <span className="mr-4 flex items-baseline gap-2 text-sm font-semibold tracking-wide text-foreground">
+            Stripe Payments Support Triage
+            <span className="text-[10px] font-normal uppercase tracking-wider text-mutedForeground">
+              agent POC
+            </span>
           </span>
           {links.map((l) => (
             <NavLink

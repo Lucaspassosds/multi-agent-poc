@@ -1,10 +1,12 @@
 # Multi-Agent Support Triage POC
 
-A **framework-free** multi-agent system that triages support tickets and drafts cited
-resolutions — built to demonstrate a checklist of AI-engineering concepts: orchestration without
-a framework, MCP, Skills, RAG with lexical+semantic search in Postgres/pgvector, tool use, the
-LLM API, retry/backoff, prompt caching, observability (spans/traces/cost), evals (golden set +
-LLM-as-judge), and a React UI that makes the whole pipeline legible.
+A **framework-free** multi-agent system that triages **Stripe payments support tickets** —
+refunds, disputes, failed charges, subscription billing — and drafts cited resolutions **grounded
+in real Stripe documentation**. Built to demonstrate a checklist of AI-engineering concepts:
+orchestration without a framework, MCP, Skills, RAG with lexical+semantic search in
+Postgres/pgvector, tool use, the LLM API, retry/backoff, prompt caching, observability
+(spans/traces/cost), evals (golden set + LLM-as-judge), and a React UI that makes the whole
+pipeline legible.
 
 **Status: 9/9 phases done.** See [`tasks/todo.md`](tasks/todo.md) for the phase-by-phase build
 log with verification notes, and [`tasks/HANDOFF.md`](tasks/HANDOFF.md) for a from-scratch
@@ -16,6 +18,22 @@ session handoff.
 - **Stack**: FastAPI (Python 3.12) · React + Vite + Tailwind · Postgres 16 + pgvector · TEI
   embeddings · LLM behind a provider interface (**Gemini free tier** now, **Claude** later — one
   env var swap).
+
+## Domain
+
+This is **not** a generic chatbot — it's scoped to one domain, with a knowledge base to match:
+
+| Source | Content | Count |
+|---|---|---|
+| Real Stripe docs (`docs.stripe.com`) | Refunds, disputes, subscription cancellation, 3D Secure | 4 pages |
+| Wikipedia | Chargebacks, 3D Secure, credit card fraud, PCI DSS | 4 pages |
+| Synthetic KB articles | Help-center-style payments policy/procedure articles | 8 articles |
+| Synthetic past tickets | Resolved tickets used as retrieval precedent | 15 tickets |
+
+Fetched, chunked, and embedded into the same Postgres/pgvector store the agent retrieves from —
+see `backend/app/seed_data.py` (synthetic content) and `backend/app/rag/ingest.py` (`FETCH_URLS`,
+the real Stripe/Wikipedia pages). Ticket categories the classifier recognizes:
+`billing · refund · subscription · payment_failure · dispute · other`.
 
 ## Screenshots
 

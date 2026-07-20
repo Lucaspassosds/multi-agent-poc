@@ -59,7 +59,13 @@ export default function EvalsPage() {
 
   return (
     <div className="viz space-y-4">
-      <h1 className="text-lg font-semibold text-foreground">Evals</h1>
+      <div>
+        <h1 className="text-lg font-semibold text-foreground">Evals</h1>
+        <p className="text-sm text-mutedForeground">
+          Golden-set scores for the Stripe payments support-triage agent, graded against real
+          Stripe-docs-grounded retrieval.
+        </p>
+      </div>
 
       <section className="rounded-lg border border-border bg-primary p-4 flex flex-wrap items-center gap-3">
         <label className="text-sm text-mutedForeground">

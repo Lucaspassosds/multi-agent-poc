@@ -2,20 +2,25 @@
 
 > Purpose of this doc: let a fresh agent (or teammate) pick up this project and continue
 > **without re-discovering context**. Read this top-to-bottom, then `specs/00-overview.md`.
-> **Project is complete — 9/9 phases done** (Phase 8 frontend + Phase 9 docs shipped since this
-> doc was first written after Phase 7). See `README.md` for the current run guide/architecture,
-> `docs/CONCEPTS.md` for the concept map, `docs/DEMO_SCRIPT.md` for the presentation outline. The
-> sections below are kept for historical/debugging context (gotchas are still live issues) but the
-> "what's next" section (§9) is stale — there is no next phase. Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
+> **Project is complete — 9/9 phases done**, plus post-launch enhancements (real SSE streaming
+> polish, a "how it works" section, a domain-explicitness pass — see §6 and §9). See `README.md`
+> for the current run guide/architecture, `docs/CONCEPTS.md` for the concept map,
+> `docs/DEMO_SCRIPT.md` for the presentation outline. The gotchas (§7) are still live issues; §9 is
+> kept as historical context on how the Phase 8 streaming fork was resolved, not a to-do list — there
+> is no next phase. Working dir: `/home/lucas/PROJETOS/multi-agent-poc`.
 
 ---
 
 ## 1. What this project is
 
-A **framework-free multi-agent system** that triages support tickets (domain: **payments support**) and
-drafts **cited resolutions**. It's a POC built to demonstrate a checklist of AI-engineering concepts:
-orchestration without a framework, MCP, RAG, observability, evals, skills, tools, lexical+semantic search
-in Postgres/pgvector, the LLM API, context management via subagents, retry, parallelism, prompt caching.
+A **framework-free multi-agent system** that triages **Stripe payments support tickets** (refunds,
+disputes, failed charges, subscription billing) and drafts **cited resolutions grounded in real Stripe
+documentation**. It's a POC built to demonstrate a checklist of AI-engineering concepts: orchestration
+without a framework, MCP, RAG, observability, evals, skills, tools, lexical+semantic search in
+Postgres/pgvector, the LLM API, context management via subagents, retry, parallelism, prompt caching.
+The domain isn't incidental — make it explicit everywhere a user/reviewer lands (UI copy, README,
+FastAPI `/docs` description), not just buried in ingest-source details. See README's "Domain" section
+for the exact KB composition (4 real Stripe docs + 4 Wikipedia + 8 synthetic articles + 15 synthetic tickets).
 
 - **Source of truth = `specs/`** (spec-driven: write/keep the spec, then build). Start at `specs/00-overview.md`.
 - **Progress tracker = `tasks/todo.md`** (checkboxes per phase, with verification notes + deviations).
@@ -26,7 +31,7 @@ in Postgres/pgvector, the LLM API, context management via subagents, retry, para
 | Layer | Choice |
 |---|---|
 | Backend | FastAPI, Python 3.12, `uv`, async (`asyncpg`, `httpx`) — runs in Docker |
-| Frontend | React + Vite + TypeScript (placeholder only so far; real UI is Phase 8) |
+| Frontend | React + Vite + TypeScript + Tailwind + react-router-dom + `@phosphor-icons/react`. 3 real screens (Triage/Observability/Evals), real SSE streaming (not a placeholder) |
 | DB / vectors | **Postgres 16 + pgvector** (no other vector DB — a requirement). Lexical search = Postgres full-text |
 | Embeddings | **`bge-small-en-v1.5`** (384-dim), served by **TEI** container over HTTP |
 | LLM | **Provider abstraction** (`app/llm/base.py`). **Now: Google Gemini free tier**; **target: Claude** via one env var. |
@@ -72,8 +77,9 @@ curl -X POST 'localhost:8000/ingest?fetch=true&reset=true'   # (curl may be hook
 | `POST /llm/chat` `/llm/stream` `/llm/retry-demo` `/llm/cache-demo` `/llm/classify-demo` | Phase-2 demos |
 | `POST /agent/answer` | single tool-using agent (Phase 3) |
 | `POST /agent/answer-mcp` | same, tools sourced over MCP (Phase 5) |
-| `POST /agent/triage?skill=&search_mode=lexical|semantic|hybrid` | **the full multi-agent pipeline** (Phase 4); synchronous, not SSE (see §9a) |
-| `GET /traces` `/traces/{id}` | list runs / full span tree — tokens, cost, cache-hit %, retries (Phase 6) |
+| `POST /agent/triage?skill=&search_mode=lexical|semantic|hybrid` | the full multi-agent pipeline, synchronous (Phase 4) |
+| `POST /agent/triage/stream?skill=&search_mode=` | same pipeline, **real SSE** — `step_start`/`step_done` per phase (genuine concurrency via `asyncio.Queue` fan-in, not simulated), then `final` (Phase 8) |
+| `GET /traces?limit=&offset=` `/traces/{id}` | list runs (paginated, returns `total`) / full span tree — tokens, cost, cache-hit %, retries (Phase 6, pagination added post-launch) |
 | `POST /evals/run?retrieval_mode=` `GET /evals` | golden-set eval run (20 cases) + latest results (Phase 7) |
 
 Body for agent endpoints: `{"message": "I was charged twice, please refund the duplicate."}`
@@ -117,6 +123,29 @@ api_llm.py           /llm/* router      api_agent.py  /agent/* router     api_tr
 api_evals.py         /evals* router     main.py       app + /health + /ingest + /search
 ```
 
+## 5a. Code map (`frontend/src/`)
+
+```
+lib/
+  api.ts             API_BASE + typed fetch helpers (getTraces w/ pagination, getTrace, getEvals, runEvals, ingest)
+  types.ts           TS interfaces mirroring the backend JSON shapes (hand-kept in sync, no codegen)
+  sse.ts             fetch-stream SSE parser for /agent/triage/stream (POST body -> can't use EventSource)
+  waterfall.ts       WaterfallRow shape + seriesKeyForName() (fixed categorical color mapping) + spanTreeToRows() adapter
+components/
+  Layout.tsx           persistent nav shell ("Stripe Payments Support Triage")
+  HowItWorks.tsx       collapsible (localStorage-persisted) "how it works" cards + capability badges — Triage page only
+  SpanWaterfall.tsx    ONE Gantt/timeline component reused for both the live SSE timeline and the retrospective trace detail
+  StatTile.tsx / MetricBar.tsx / ClassificationChips.tsx / CitationBadge.tsx
+pages/
+  TriagePage.tsx         submit -> live SSE timeline (STEP_DISPLAY_LABEL for text, STEP_SERIES_NAME for color — kept separate) -> cited answer
+  ObservabilityPage.tsx  paginated trace list ("Load more") -> TraceDetailPage.tsx (waterfall + stat tiles)
+  EvalsPage.tsx          run button + retrieval_mode selector + aggregate MetricBars + per-case table
+styles/index.css     Tailwind directives + dark-only design tokens + `.viz`-scoped chart tokens (categorical/status, validated via dataviz's validate_palette.js)
+```
+Design system: `ui-ux-pro-max` skill (Modern Dark style, Inter font) + `dataviz` skill (validated
+categorical/status palette, mark specs). No charting library — the waterfall is hand-rolled since
+it's a Gantt/trace timeline, not a standard chart type.
+
 ## 6. Key decisions & why (so you don't relitigate them)
 
 - **Gemini instead of Claude (for now):** the user couldn't add Anthropic billing. The `LLMProvider`
@@ -126,6 +155,16 @@ api_evals.py         /evals* router     main.py       app + /health + /ingest + 
   (haiku/sonnet/opus) returns automatically when swapped to Claude.
 - **HTTP fetch, not crawl4ai** for ingest (see §7).
 - **English KB** (Stripe docs + Wikipedia payment topics + synthetic). User confirmed English over pt-BR.
+- **Real SSE streaming for the Triage screen (Phase 8), not a client-side simulation**: given an explicit
+  fork (see spec `08-frontend.md`'s Implementation note), the user chose to refactor the orchestrator
+  (`triage_events()` async generator + `asyncio.Queue` fan-in) over the simpler "render after the fact"
+  option. Verified: concurrent retriever `step_start` events land at the identical timestamp.
+- **Frontend stack landed**: Tailwind CSS + react-router-dom + plain `fetch` (no TanStack Query — too
+  few endpoints to justify it) + `@phosphor-icons/react` (added later, for the "How it works" section).
+- **Domain made explicit everywhere, not just in ingest details** (this session, 2026-07-20): nav header,
+  page titles/subtitles on all 3 screens, FastAPI `/docs` description, README intro + new "Domain" table,
+  `docs/CONCEPTS.md`/`docs/DEMO_SCRIPT.md` — all now say "Stripe payments support tickets" explicitly
+  instead of generic "support tickets". Prompted by user feedback that the domain was too buried.
 
 ## 7. GOTCHAS — hard-won, will bite you if unknown (also in `.claude/.../memory/`)
 
@@ -178,49 +217,27 @@ Backend logs: `docker compose logs backend --since 60s`. Backend hot-reloads `ap
 **restart after changing imports/lifespan**; **rebuild only when `pyproject.toml` deps change**
 (`docker compose build backend`).
 
-## 9. What's next — Phase 8 (Frontend)
+## 9. Phase 8/9 resolution (historical — no next phase)
 
-Phases 6-7 are done (see status table above). Backend is feature-complete for the whole demo — Phase 8
-is pure frontend, zero backend work expected *unless* the SSE fork below (§9a) is resolved toward "build
-real streaming". `frontend/` is still exactly the **Phase 0 placeholder** (`Dockerfile`, bare
-`src/App.tsx`/`main.tsx`, no routing/UI libs installed) — nothing has been built there yet.
-
-**Read `specs/08-frontend.md` first.** Steps, in order:
-1. **Invoke the `ui-ux-pro-max` skill before writing any UI code** — the spec is explicit that style/
-   palette/font/layout/chart choices must come from it, not be hand-picked. Also load `dataviz` for the
-   span waterfall specifically.
-2. Three screens: **Triage** (submit ticket → live-ish timeline → cited final answer + classification
-   chips), **Observability dashboard** (trace list + span waterfall + cost/cache-hit/retry stats),
-   **Evals report** (aggregates + per-case table with judge reasoning, and a way to trigger/compare the
-   regression demo).
-3. Real endpoints to consume (see table in §4 — **note these differ from spec 08's own endpoint list**,
-   see §9a): `POST /agent/triage?skill=&search_mode=`, `GET /traces`, `GET /traces/{id}`,
-   `POST /evals/run?retrieval_mode=`, `GET /evals`, `POST /ingest`.
-
-### 9a. ⚠️ Open fork to consult the user on before building the Triage screen
-`specs/08-frontend.md` describes the hero screen as SSE-streamed (`POST /tickets/triage` (SSE), "watch
-each step live"). **That endpoint doesn't exist.** What actually exists is `POST /agent/triage` — a
-single synchronous call that runs the whole classify→retrieve→resolve→critique pipeline server-side and
-returns one JSON blob (including `trace_id`) only once it's fully done; the Phase-6 `Trace` is persisted
-atomically in `Trace.__aexit__`, so there's **no partial/live trace visible mid-request** today. Two ways
-to reconcile this — **ask the user before picking one, it's an architecture fork**:
-- **(A) No backend changes (simplest)**: call `/agent/triage`, show a loading state, then render the
-  complete result — and separately fetch `/traces/{trace_id}` to render the waterfall *retrospectively*
-  (after the fact, not "live"). Still legible and demoable, just not truly streaming.
-- **(B) Real streaming**: refactor `orchestrator.triage()` to emit step/span events incrementally (e.g.
-  an async generator + SSE endpoint), so the UI timeline animates as it actually happens. More faithful
-  to the spec/demo script, but a real backend change to code that's already verified — treat it as its
-  own mini-plan, not a drive-by edit.
-
-Then Phase 9 (docs & presentation) is all that's left.
+Phase 8's spec (`specs/08-frontend.md`) originally described the hero screen as SSE-streamed via a
+`POST /tickets/triage` endpoint that never existed — only the synchronous `POST /agent/triage` did, with
+no partial/live trace exposed mid-request. This was surfaced to the user as an explicit architecture
+fork (no-backend-change retrospective rendering vs. a real orchestrator refactor for genuine streaming);
+**the user chose real streaming**. Full resolution, what was built, and how it was verified is written
+up in `specs/08-frontend.md`'s "Implementation note" and "Post-launch enhancement" sections — read those
+instead of reconstructing the decision from scratch. Phase 9 (docs) followed immediately after. There is
+no pending phase; any further work is a fresh, separately-scoped enhancement (e.g. the "How it works"
+section and domain-explicitness pass were both post-launch additions after Phase 9, done the same way —
+brainstormed/specified in `specs/08-frontend.md`, then implemented and verified).
 
 ## 10. Conventions
 
 - **Teach-as-we-build**: the user is upskilling in AI eng — explain concepts plainly as you implement.
 - **Verify before claiming done**: run the endpoint, show real output. Every phase has a verification note.
 - **Consult on real forks**: ask before decisions that change architecture or are costly to reverse.
-- **Commits**: conventional prefixes, scoped per subsystem/phase, end with the
-  `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` trailer. Commit/push only when asked.
+- **Commits**: conventional prefixes, scoped per subsystem/phase, end with a
+  `Co-Authored-By: Claude <actual model in use> <noreply@anthropic.com>` trailer — match whichever
+  model is actually running the session, don't hardcode a specific one. Commit/push only when asked.
 - **Memory**: durable gotchas live in `.claude/projects/-home-lucas-PROJETOS-multi-agent-poc/memory/`
   (`gemini-free-tier-gotchas.md`, `crawl-vpn-gotchas.md`, project + working-style notes).
 - No mention of a specific person/role in repo files (all such references were scrubbed to neutral wording).

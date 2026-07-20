@@ -3,6 +3,10 @@
 One page for reviewers: where each required concept actually lives in the codebase, and which
 phase built it. Cross-reference with `tasks/todo.md` for the verification note behind each phase.
 
+Domain reminder: this agent triages **Stripe payments support tickets**, grounded in real Stripe
+documentation (see the README's "Domain" section) — the concepts below are demonstrated *through*
+that concrete product, not in the abstract.
+
 | Concept | Where in code | Phase |
 |---|---|---|
 | Orchestration without a framework *(orquestração sem framework)* | `backend/app/agents/orchestrator.py` — `_run_pipeline()`/`triage()`: hand-rolled classify→retrieve→resolve→critique→revision flow. No LangChain/CrewAI/LangGraph. | 4 |

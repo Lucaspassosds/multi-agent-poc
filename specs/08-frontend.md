@@ -81,3 +81,69 @@ Stack landed on **Tailwind CSS** + **react-router-dom** + plain `fetch` (no TanS
 isn't a standard chart-library type (it's a Gantt/trace timeline); it and the eval score meters
 are hand-rolled per the `dataviz` skill's mark specs, using a categorical/status color palette
 validated against the app's dark surface (`ui-ux-pro-max`'s "Modern Dark" style recommendation).
+
+## Post-launch enhancement: Triage page "how it works" section (2026-07-20)
+
+### Why
+The shipped Triage page (above) is purely functional — textarea, presets, live timeline, answer
+card, chips — with no explanation of what the agent actually does for a first-time viewer (e.g. a
+reviewer landing on the page cold, before ever submitting a ticket). Researched current (2026)
+market patterns for AI-agent-product main screens before designing this — two credible sources
+converged on the same core ideas, both directly applicable here:
+- **Plan-and-execute / "Intent Preview"** ([Smashing Magazine](https://www.smashingmagazine.com/2026/02/designing-agentic-ai-practical-ux-patterns/),
+  [Fuselab](https://fuselabcreative.com/ui-design-for-ai-agents/)): show the agent's intended steps
+  in plain language *before* it acts — plain language specifically (their example: "Cancel flight
+  AA123", not "Executing API call cancel_booking(id: 4A7B)").
+- **Transparency over silence**: proactive status communication beats a bare spinner; users
+  disengage when an interface is a black box with nothing shown between input and output.
+- **Evidence-forward trust** (NNGroup, cited by Fuselab): users rarely click citations, but seeing
+  that reasoning/evidence exists is itself what builds trust — supports keeping the citation/RAG
+  framing prominent rather than treating it as incidental plumbing.
+
+### Content contract
+A dismissible "How it works" section above the ticket form:
+- **4 step cards** (Classify → Retrieve → Resolve → Critique), each: an icon (Phosphor), a short
+  title matching the live timeline's row labels exactly, one plain-language sentence (no
+  "subagent"/"span"/internal jargon):
+  1. **Classify** — "Figures out what kind of issue this is: category, priority, and how the
+     customer's feeling."
+  2. **Retrieve** (badge: *parallel*) — "Searches the knowledge base and past tickets at once, from
+     a few different angles."
+  3. **Resolve** — "Drafts a reply grounded in what it found — no invented policy, every claim
+     traceable."
+  4. **Critique** — "A second pass checks the draft for unsupported claims or gaps, and revises if
+     needed."
+- **4 capability badges** below the cards (icon + short label): Grounded answers (RAG + citations)
+  · Parallel retrieval · Self-critiques & revises · Every run fully traced (links to
+  `/observability`).
+
+### Mechanics
+- A small header row ("How it works" + chevron) toggles the section open/closed.
+- Expanded by default; collapsed state persists in `localStorage` (survives refresh) — a viewer who
+  collapses it once doesn't have to re-collapse it every demo run.
+- Icons: **`@phosphor-icons/react`** (new dependency) — the icon set `ui-ux-pro-max` recommends as
+  this project's default; used here for the first time (no other screen has icons yet).
+- The live timeline's row labels (`STEP_LABEL` in `TriagePage.tsx`, `SERIES_LABEL` in
+  `lib/waterfall.ts`) are relabeled to match the card titles exactly (Classify/Retrieve/Resolve/
+  Critique, not classifier/retriever/resolver/critic) — same words in the static preview and the
+  live view, per the "avoid jargon" principle above.
+- Light visual polish pass on the existing form/timeline/answer card (spacing, hierarchy, icons on
+  section headers) so the new section doesn't look bolted onto an otherwise plainer page —
+  functional behavior of those parts is unchanged.
+
+### Acceptance
+- [x] Section renders above the form, expanded by default, on a fresh visit (no localStorage entry).
+- [x] Collapsing it and refreshing the page keeps it collapsed (localStorage-backed `useState`
+      initializer + effect in `HowItWorks.tsx`, guarded with try/catch for private-mode browsers).
+- [x] "Every run fully traced" badge navigates to `/observability` (verified via rendered DOM `href`).
+- [x] Timeline row labels read Classify/Retrieve/Resolve/Critique, matching the card titles
+      (`STEP_DISPLAY_LABEL` in `TriagePage.tsx`, kept separate from `STEP_SERIES_NAME` which still
+      feeds `seriesKeyForName()` the original backend vocabulary for color lookup — relabeling the
+      display text doesn't touch how colors are chosen).
+- [x] No regression to existing submit/stream/citation/chip behavior (`tsc -b` clean; headless
+      render shows the form, presets, and submit button all working as before, just restyled into
+      a bordered card with an icon).
+
+Verified 2026-07-20: `docker compose exec frontend npx tsc -b --noEmit` clean; headless-Chrome
+screenshot of `/` shows the 4 step cards + 4 capability badges rendering correctly with Phosphor
+icons; no console errors beyond Chrome's own internal telemetry noise.

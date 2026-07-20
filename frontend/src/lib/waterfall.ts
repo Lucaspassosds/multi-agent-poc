@@ -10,11 +10,11 @@ export type SeriesKey = (typeof SERIES_ORDER)[number]
 
 export const SERIES_LABEL: Record<SeriesKey, string> = {
   agent: 'Orchestrator',
-  retriever: 'Retriever',
-  classifier: 'Classifier',
-  planner: 'Planner',
-  resolver: 'Resolver',
-  critic: 'Critic',
+  retriever: 'Retrieve',
+  classifier: 'Classify',
+  planner: 'Plan',
+  resolver: 'Resolve',
+  critic: 'Critique',
   tool: 'Tool call',
   llm_call: 'LLM call',
 }

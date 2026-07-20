@@ -29,7 +29,15 @@ async def lifespan(app: FastAPI):
     await close_pool()
 
 
-app = FastAPI(title="Multi-Agent Support Triage POC", lifespan=lifespan)
+app = FastAPI(
+    title="Multi-Agent Support Triage POC",
+    description=(
+        "A framework-free multi-agent system that triages Stripe payments support tickets — "
+        "refunds, disputes, failed charges, subscription billing — and drafts cited resolutions "
+        "grounded in real Stripe documentation."
+    ),
+    lifespan=lifespan,
+)
 
 # Allow the Vite dev server (Phase 8 UI) to call the API from the browser.
 app.add_middleware(

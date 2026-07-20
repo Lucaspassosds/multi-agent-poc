@@ -33,7 +33,12 @@ export default function ObservabilityPage() {
 
   return (
     <div className="viz space-y-4">
-      <h1 className="text-lg font-semibold text-foreground">Observability</h1>
+      <div>
+        <h1 className="text-lg font-semibold text-foreground">Observability</h1>
+        <p className="text-sm text-mutedForeground">
+          Traces from the Stripe payments support-triage agent — tokens, cost, parallelism, retries.
+        </p>
+      </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!traces && !error && <p className="text-sm text-mutedForeground">Loading traces…</p>}
       {traces && traces.length === 0 && (
