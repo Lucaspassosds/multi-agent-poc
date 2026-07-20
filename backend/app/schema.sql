@@ -64,6 +64,22 @@ CREATE TABLE IF NOT EXISTS spans (
 CREATE INDEX IF NOT EXISTS spans_trace_idx  ON spans (trace_id);
 CREATE INDEX IF NOT EXISTS spans_parent_idx ON spans (parent_id);
 
+-- Ticket history: one row per SUCCESSFUL triage run, linking the submitted ticket + final
+-- reply to its already-persisted trace (spans = the timeline). Scoped per anonymous session_id.
+-- Runs idempotently on startup like the tables above.
+CREATE TABLE IF NOT EXISTS tickets (
+    id           BIGSERIAL   PRIMARY KEY,
+    session_id   TEXT        NOT NULL,
+    ticket_text  TEXT        NOT NULL,
+    category     TEXT,                                  -- from classification, for the sidebar chip
+    final_reply  TEXT        NOT NULL,                  -- denormalized for list preview
+    result       JSONB       NOT NULL,                  -- full TriageResult → restores the final-reply view
+    trace_id     BIGINT      REFERENCES traces(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS tickets_session_created_idx ON tickets (session_id, created_at DESC);
+
 -- Phase 7 schema: one eval_runs row per `POST /evals/run`, one eval_cases row per golden-set case.
 -- See app/evals/runner.py for the writer.
 CREATE TABLE IF NOT EXISTS eval_runs (
