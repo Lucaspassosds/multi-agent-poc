@@ -27,7 +27,7 @@ async def save_ticket(session_id: str, result: dict) -> int:
         result["ticket"],
         (result.get("classification") or {}).get("category"),
         result["final_reply"],
-        json.dumps(result),        # asyncpg has no dict->jsonb codec here; send text + ::jsonb cast
+        json.dumps(result, default=str),  # asyncpg has no dict->jsonb codec here; send text + ::jsonb cast
         result.get("trace_id"),
     )
 
