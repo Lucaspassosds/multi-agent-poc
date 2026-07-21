@@ -1,9 +1,10 @@
 """Phase 7 — run the golden set through the full triage pipeline and score it.
 
 Reuses `orchestrator.triage()` as-is, so each case is also a Phase-6 trace (cost of an eval run
-is visible via GET /traces) plus one extra LLM-as-judge call per case. `retrieval_mode` lets a
-demo force lexical/semantic-only retrieval to show a deliberate regression (spec's acceptance
-criterion: "a deliberate regression measurably lowers the scores").
+is visible via GET /traces, tagged trace_name="eval" so it's distinguishable from live "triage"
+traffic) plus one extra LLM-as-judge call per case. `retrieval_mode` lets a demo force
+lexical/semantic-only retrieval to show a deliberate regression (spec's acceptance criterion:
+"a deliberate regression measurably lowers the scores").
 """
 import asyncio
 import json
@@ -36,7 +37,7 @@ def _dt(ts: float) -> datetime:
 
 async def _run_case(case: dict, search_mode: str, sem: asyncio.Semaphore) -> dict:
     async with sem:
-        result = await triage(case["ticket"], search_mode=search_mode)
+        result = await triage(case["ticket"], search_mode=search_mode, trace_name="eval")
         verdict, judge_usage = await judge(case, result)
 
     category_correct, priority_correct = classification_match(case, result)

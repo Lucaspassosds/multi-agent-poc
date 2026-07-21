@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS chunks_embedding_idx ON chunks USING hnsw (embedding 
 -- See app/observability.py for the writer; runs idempotently on startup like the tables above.
 CREATE TABLE IF NOT EXISTS traces (
     id             BIGSERIAL PRIMARY KEY,
-    name           TEXT        NOT NULL,       -- 'triage' | 'agent'
+    name           TEXT        NOT NULL,       -- 'triage' | 'eval' | 'agent'
     ticket_id      BIGINT,
     started_at     TIMESTAMPTZ NOT NULL,
     ended_at       TIMESTAMPTZ NOT NULL,
