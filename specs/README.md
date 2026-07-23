@@ -23,3 +23,21 @@ source of truth; `tasks/todo.md` is the task tracker that points back here.
 
 Later specs may still get small revisions as we learn things building the earlier phases; any change
 will be called out.
+
+## Improvements track — `improvements/`
+A second-round plan addressing reviewer feedback (findability, depth, client-facing polish). The
+original `00-08` specs above stay as the source-of-truth for what was first built; the improvements
+track layers on top. **Start at [`improvements/00-overview.md`](improvements/00-overview.md)** — it
+holds the reframing, locked decisions, phased order of operations, and the scope-creep review.
+
+| Spec | Scope |
+|---|---|
+| `improvements/00-overview.md` | Why, reframing, locked decisions, phasing, scope-creep review, success criteria |
+| `improvements/01-restructure-discoverability.md` | Concept-first layout + `── Concept:` signposts + discoverability layer |
+| `improvements/02-code-clarity.md` | Name-storm collapse, one-format concept tags, half-built-artifact fixes |
+| `improvements/03-mcp-rework.md` | All three MCP primitives; MCP on the retrieval critical path |
+| `improvements/04-skills-rework.md` | Skill library, 3-level disclosure, bundled executable script |
+| `improvements/05-tools-rework.md` | Typed/annotated tools; gated real `escalate`; mock reads |
+| `improvements/06-observability-langfuse.md` | Langfuse Cloud augmentation; scores; budgets; charts |
+| `improvements/07-concept-depth.md` | Reranker, revise loop, chaos-toggle, eval taxonomy + gating |
+| `improvements/08-frontend-polish.md` | Client/under-the-hood toggle; three-screen redesign |
