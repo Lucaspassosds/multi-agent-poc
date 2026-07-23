@@ -14,6 +14,20 @@ session handoff.
 
 - **Specs** (source of truth): [`specs/`](specs/) — read `specs/00-overview.md` first.
 - **Concept → code map** (for reviewers): [`docs/CONCEPTS.md`](docs/CONCEPTS.md).
+- **Repo map** — every backend folder is one concept (details in [`backend/app/README.md`](backend/app/README.md)):
+  ```
+  backend/app/
+  ├── agents/         orchestration (framework-free) · subagent context · parallelism
+  ├── tools/          function-calling registry (+ the tool-use loop in agents/loop.py)
+  ├── mcp/            MCP server + client
+  ├── rag/            RAG · lexical+semantic search in pgvector · embeddings · seed data
+  ├── skills/         SKILL.md loader + definitions/ (progressive disclosure)
+  ├── llm/            provider abstraction · retry/backoff · prompt caching
+  ├── evals/          golden set + LLM-as-judge
+  ├── observability.py  spans / traces / cost
+  ├── api/            thin HTTP routers
+  └── main.py config.py db.py schema.sql   entrypoint + plumbing
+  ```
 - **Demo talking track**: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 - **Stack**: FastAPI (Python 3.12) · React + Vite + Tailwind · Postgres 16 + pgvector · TEI
   embeddings · LLM behind a provider interface (**Gemini free tier** now, **Claude** later — one
