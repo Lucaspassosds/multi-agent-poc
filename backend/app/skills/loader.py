@@ -8,7 +8,8 @@ Skills API is the deferred, Claude-only alternative.
 # ── Concept: SKILLS ── filesystem SKILL.md, progressive disclosure: one-line descriptions in context, full body loaded on demand.
 from pathlib import Path
 
-_SKILLS_DIR = Path(__file__).parent / "skills"
+# loader.py now lives inside app/skills/, so the SKILL.md data sits in the sibling definitions/ dir.
+_SKILLS_DIR = Path(__file__).parent / "definitions"
 
 
 def _parse(md: str) -> tuple[dict, str]:
