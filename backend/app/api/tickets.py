@@ -1,6 +1,6 @@
 """Ticket history — persist each successful triage run and list/read past runs per session.
 
-Mirrors the read-side conventions of api_traces.py (APIRouter + asyncpg pool + .isoformat()).
+Mirrors the read-side conventions of api/traces.py (APIRouter + asyncpg pool + .isoformat()).
 The agent timeline is NOT stored here: it already lives in `spans`, reachable via GET
 /traces/{trace_id}; a ticket only links to it through `trace_id`.
 """

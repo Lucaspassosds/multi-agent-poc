@@ -10,11 +10,11 @@ import httpx
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api_agent import router as agent_router
-from app.api_evals import router as evals_router
-from app.api_llm import router as llm_router
-from app.api_tickets import router as tickets_router
-from app.api_traces import router as traces_router
+from app.api.agent import router as agent_router
+from app.api.evals import router as evals_router
+from app.api.llm import router as llm_router
+from app.api.tickets import router as tickets_router
+from app.api.traces import router as traces_router
 from app.config import settings
 from app.db import close_pool, get_pool, init_schema
 from app.rag import search as search_mod
