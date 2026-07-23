@@ -7,10 +7,10 @@ HTTP fetch (url->md) -> RecursiveCharacterTextSplitter (md->chunks) -> TEI (chun
 import json
 
 from app.db import get_pool
-from app.embeddings import embed
+from app.rag.embeddings import embed
 from app.rag.chunking import chunk_markdown
 from app.rag.fetch import fetch_to_markdown
-from app.seed_data import KB_ARTICLES, PAST_TICKETS
+from app.rag.seed_data import KB_ARTICLES, PAST_TICKETS
 
 # Real English doc pages fetched via HTTP (server-rendered; Accept-Language=en-US → English).
 FETCH_URLS = [

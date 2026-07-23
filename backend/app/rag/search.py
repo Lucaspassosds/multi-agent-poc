@@ -12,7 +12,7 @@
 import asyncio
 
 from app.db import get_pool
-from app.embeddings import embed_one
+from app.rag.embeddings import embed_one
 
 _SELECT = """
     SELECT c.id, c.document_id, c.ordinal, c.content,
