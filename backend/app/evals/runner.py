@@ -6,6 +6,7 @@ traffic) plus one extra LLM-as-judge call per case. `retrieval_mode` lets a demo
 lexical/semantic-only retrieval to show a deliberate regression (spec's acceptance criterion:
 "a deliberate regression measurably lowers the scores").
 """
+# ── Concept: EVALS ── run the golden set through the full pipeline; deterministic metrics + LLM-as-judge scoring.
 import asyncio
 import json
 import time

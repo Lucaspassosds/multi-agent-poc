@@ -3,6 +3,7 @@
 Swapping Gemini <-> Claude is a config change (LLM_PROVIDER), not a code change,
 because everything above this layer speaks these neutral types instead of a vendor SDK.
 """
+# ── Concept: LLM API + PROVIDER ABSTRACTION ── neutral LLMProvider/Message/ToolSpec/Usage; swap Gemini→Claude behind get_provider().
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,6 +30,7 @@ class ToolCall:
 class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
+    # ── Concept: PROMPT CACHING ── cached_tokens flows to spans (cache_read_tokens) → /traces cache_hit_pct; honest 0% on Gemini free tier.
     cached_tokens: int = 0   # normalized across providers (Gemini implicit cache / Claude cache read)
 
 

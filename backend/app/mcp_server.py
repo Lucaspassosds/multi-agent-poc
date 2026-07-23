@@ -7,6 +7,7 @@ call them. Write the tool once, reuse anywhere.
 Run as its own container: `python -m app.mcp_server` (see docker-compose `mcp` service).
 Reuses the exact same search code as the in-process tools (single source of truth).
 """
+# ── Concept: MCP (SERVER) ── the same search tools exposed over Model Context Protocol (Streamable HTTP :9000/mcp) for any MCP client.
 from mcp.server.fastmcp import FastMCP
 
 from app.agents.tools import _get_document

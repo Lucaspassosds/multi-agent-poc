@@ -7,6 +7,7 @@ retrievers) each correctly parent under the same orchestrator span while their s
 timestamps genuinely overlap. Spans accumulate in memory and are written to Postgres in one shot
 when the trace closes (Trace.__aexit__) — no live/streaming updates yet, that's Phase 8.
 """
+# ── Concept: OBSERVABILITY ── framework-free Trace/span() via contextvars; nested + concurrent spans parent correctly; cost attribution.
 import contextvars
 import time
 from contextlib import asynccontextmanager

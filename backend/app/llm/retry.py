@@ -51,6 +51,7 @@ def _suggested_delay(exc: Exception) -> float | None:
     return None
 
 
+# ── Concept: RETRY / BACKOFF ── exponential backoff + jitter on 429/5xx/timeouts; honors Gemini's RetryInfo.retryDelay.
 def with_retry(max_attempts: int = 6, base_delay: float = 0.5, max_delay: float = 45.0):
     def decorator(fn):
         @functools.wraps(fn)

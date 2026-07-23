@@ -4,6 +4,7 @@ No LangChain/CrewAI — just: call the model, if it asked for tools run them, fe
 results back, repeat until it produces a final answer (or we hit the iteration cap).
 Every step is recorded for observability (Phase 6).
 """
+# ── Concept: TOOLS (THE HAND-ROLLED LOOP) ── call model → run requested tools → feed results back → repeat until final. No framework.
 from app.agents.tools import TOOL_SPECS, dispatch
 from app.llm.base import Message, ToolSpec, assistant, tool_result, user
 from app.llm.factory import get_provider

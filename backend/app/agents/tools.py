@@ -3,6 +3,7 @@
 A tool = a JSON-schema-described function the model may choose to call. The model
 never runs code; it emits a tool call, WE execute the Python here and feed the result back.
 """
+# ── Concept: TOOLS (FUNCTION CALLING) ── JSON-schema tool specs + a dispatcher: hybrid_search / get_document / get_ticket / escalate.
 import json
 
 from app.db import get_pool

@@ -3,6 +3,7 @@
 Populates `documents` + `chunks`. Flow (spec 02):
 HTTP fetch (url->md) -> RecursiveCharacterTextSplitter (md->chunks) -> TEI (chunk->vector) -> Postgres.
 """
+# ── Concept: RAG ── ingest pipeline: (fetch | synthetic) → chunk → embed → store into pgvector.
 import json
 
 from app.db import get_pool

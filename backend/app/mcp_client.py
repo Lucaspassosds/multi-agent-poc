@@ -5,6 +5,7 @@ This is provider-agnostic: we convert MCP tool definitions into our neutral Tool
 (spec 04) then runs against MCP tools instead of in-process functions — proving the
 "write once, reuse anywhere" claim (works on Gemini now, Claude later).
 """
+# ── Concept: MCP (CLIENT) ── converts MCP tool defs into our neutral ToolSpec + a dispatch that calls them over the protocol.
 import json
 from contextlib import asynccontextmanager
 

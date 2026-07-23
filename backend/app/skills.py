@@ -5,6 +5,7 @@ Progressive disclosure: by default only a skill's one-line description sits in c
 This is the provider-agnostic approach (works on Gemini now); the native Anthropic Agent
 Skills API is the deferred, Claude-only alternative.
 """
+# ── Concept: SKILLS ── filesystem SKILL.md, progressive disclosure: one-line descriptions in context, full body loaded on demand.
 from pathlib import Path
 
 _SKILLS_DIR = Path(__file__).parent / "skills"

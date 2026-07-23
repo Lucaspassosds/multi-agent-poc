@@ -10,6 +10,7 @@ Key ideas demonstrated:
 - Each subagent uses a model tier matched to its job (all flash-lite on Gemini free tier; the
   haiku/sonnet/opus tiering returns at the Claude swap).
 """
+# ── Concept: ORCHESTRATION (FRAMEWORK-FREE) ── hand-rolled classify→retrieve→resolve→critique→revision; no LangChain/CrewAI/LangGraph.
 import asyncio
 import json
 import time
@@ -84,6 +85,7 @@ async def _text(model, system, message, max_tokens=800):
 
 # --- subagents (each: fresh context in, compact result out) ---
 
+# ── Concept: CONTEXT MANAGEMENT (SUBAGENTS) ── each step is a fresh, isolated LLM call; only a compact result returns, never a growing transcript.
 async def _classify(ticket: str):
     async with span("classifier", "subagent", model=settings.model_classify) as s:
         result, usage = await _json(
@@ -208,6 +210,7 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
 
     async with Trace(trace_name) as trace:
         # 1) classify + plan concurrently (independent)
+        # ── Concept: PARALLELISM ── classify + plan (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
         (classification, u1), (subqs, u2) = await asyncio.gather(_classify_emit(), _plan_emit())
         _accum(usage, u1); _accum(usage, u2)
         questions = subqs["questions"][:max_subquestions]

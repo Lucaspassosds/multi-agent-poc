@@ -8,6 +8,7 @@
              score(doc) = Σ 1 / (k + rank_in_list). Rank-based, so it needs no score
              normalization between the two very different scales. Best of both worlds.
 """
+# ── Concept: LEXICAL + SEMANTIC SEARCH (PGVECTOR) ── tsvector lexical + vector cosine, fused with Reciprocal Rank Fusion in hybrid_search().
 import asyncio
 
 from app.db import get_pool
