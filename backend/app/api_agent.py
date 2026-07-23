@@ -9,7 +9,7 @@ from app.agents.loop import run_agent
 from app.agents.orchestrator import triage, triage_events
 from app.api_tickets import save_ticket
 from app.config import settings
-from app.mcp_client import list_tool_specs, make_dispatch, mcp_session
+from app.mcp.client import list_tool_specs, make_dispatch, mcp_session
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 

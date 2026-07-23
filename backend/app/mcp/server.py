@@ -4,7 +4,7 @@ Exposes our search tools over the Model Context Protocol (Streamable HTTP) so AN
 MCP-aware client — our backend, Claude Desktop, an MCP inspector — can discover and
 call them. Write the tool once, reuse anywhere.
 
-Run as its own container: `python -m app.mcp_server` (see docker-compose `mcp` service).
+Run as its own container: `python -m app.mcp.server` (see docker-compose `mcp` service).
 Reuses the exact same search code as the in-process tools (single source of truth).
 """
 # ── Concept: MCP (SERVER) ── the same search tools exposed over Model Context Protocol (Streamable HTTP :9000/mcp) for any MCP client.

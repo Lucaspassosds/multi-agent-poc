@@ -52,7 +52,7 @@ services:
   mcp:
     # MCP server (Streamable HTTP on :9000/mcp) — reuses the backend image + code.
     build: ./backend
-    command: ["python", "-m", "app.mcp_server"]
+    command: ["python", "-m", "app.mcp.server"]
     env_file: .env
     ports:
       - "127.0.0.1:9000:9000"
