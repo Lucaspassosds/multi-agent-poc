@@ -10,7 +10,7 @@ Reuses the exact same search code as the in-process tools (single source of trut
 # ── Concept: MCP (SERVER) ── the same search tools exposed over Model Context Protocol (Streamable HTTP :9000/mcp) for any MCP client.
 from mcp.server.fastmcp import FastMCP
 
-from app.agents.tools import _get_document
+from app.tools import _get_document
 from app.rag.search import hybrid_search as _hybrid
 
 mcp = FastMCP("support-kb", host="0.0.0.0", port=9000)
