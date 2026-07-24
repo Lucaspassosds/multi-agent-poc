@@ -24,7 +24,7 @@ from app.llm.base import user
 from app.llm.factory import get_provider
 from app.observability import Trace, span
 from app.rag import search as search_mod
-from app.skills import load_skill
+from app.skills.loader import list_skills, load_skill, run_skill_script
 
 
 class Classification(BaseModel):
@@ -41,6 +41,19 @@ class Critique(BaseModel):
     verdict: str          # "approve" | "revise"
     issues: list[str]
     fixes: list[str]
+
+
+class SkillSelection(BaseModel):
+    names: list[str]          # subset of the offered skill names, [] if none apply
+
+
+class _RefundFacts(BaseModel):
+    days_since_payment: int | None = None
+    status: str = ""
+    refunded: bool = False
+    dispute_open: bool = False
+    is_subscription: bool = False
+    within_renewal_window: bool = False
 
 
 # An emit callback lets _run_pipeline report step_start/step_done events as they happen
@@ -153,6 +166,48 @@ async def _critique(ticket, draft, evidences):
         return result, usage
 
 
+async def _select_and_run_skills(ticket: str) -> tuple[list[str], str | None, dict | None]:
+    """Level 1 -> 2 -> 3 progressive disclosure, driven by the model (not hardcoded):
+    show only names+descriptions, let the model pick, load the chosen bodies, and — if
+    refund-policy is chosen — run its level-3 script so its verdict shapes the reply."""
+    catalog = list_skills()
+    listing = "\n".join(f"- {s['name']}: {s['description']}" for s in catalog)
+    async with span("skill_select", "subagent", model=settings.model_classify) as s:
+        sel, usage = await _complete_json(
+            settings.model_classify,
+            "Select which skills apply to this support ticket. Choose only from the offered names; "
+            f"return an empty list if none apply.\n\nAvailable skills:\n{listing}",
+            ticket, SkillSelection,
+        )
+        s.record_usage(usage)
+    valid = {s_["name"] for s_ in catalog}
+    names = [n for n in sel.get("names", []) if n in valid]
+    # Always include the reply formatter when drafting (house style), even if unselected.
+    if "policy-reply-formatter" not in names:
+        names.append("policy-reply-formatter")
+
+    bodies = [b for b in (load_skill(n) for n in names) if b]
+    body = "\n\n".join(bodies) if bodies else None
+
+    evidence = None
+    if "refund-policy" in names:
+        # Level 3: extract the facts the script needs, then run it.
+        facts, u = await _complete_json(
+            settings.model_classify,
+            "Extract refund facts from the ticket as JSON. Unknown numbers -> null; unknown "
+            "booleans -> false. Fields: days_since_payment (int|null), status "
+            "(succeeded|pending|failed|refunded|disputed), refunded (bool), dispute_open (bool), "
+            "is_subscription (bool), within_renewal_window (bool).",
+            ticket, _RefundFacts,
+        )
+        async with span("skill_script:refund_eligibility", "tool"):
+            run = await run_skill_script("refund-policy", "refund_eligibility.py", facts)
+        if run.get("ok"):
+            evidence = {"skill": "refund-policy", "script": "refund_eligibility.py",
+                        "verdict": run["output"]}
+    return names, body, evidence
+
+
 async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
                          search_mode: str = "hybrid", emit: EmitFn = _noop_emit,
                          trace_name: str = "triage") -> dict:
@@ -167,8 +222,13 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
     """
     started = time.time()
     usage = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0}
-    # Progressive disclosure: load the formatter skill body only when we'll draft a reply.
-    skill_body = load_skill("policy-reply-formatter") if use_skill else None
+
+    async def _select_emit():
+        # Progressive disclosure: model-driven skill selection (+ level-3 run) when drafting a reply.
+        # Runs INSIDE the trace (below) so skill_select / skill_script spans attach to it.
+        if not use_skill:
+            return [], None, None
+        return await _select_and_run_skills(ticket)
 
     async def _classify_emit():
         await emit({"type": "step_start", "step": "classify"})
@@ -189,9 +249,11 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         return result, step_usage
 
     async with Trace(trace_name) as trace:
-        # 1) classify + plan concurrently (independent)
-        # ── Concept: PARALLELISM ── classify + plan (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
-        (classification, classify_usage), (subqs, plan_usage) = await asyncio.gather(_classify_emit(), _plan_emit())
+        # 1) classify + plan + skill-selection concurrently (all independent)
+        # ── Concept: PARALLELISM ── classify + plan + skill-selection (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
+        (classification, classify_usage), (subqs, plan_usage), \
+            (selected_names, skill_body, skill_evidence) = await asyncio.gather(
+                _classify_emit(), _plan_emit(), _select_emit())
         _add_usage(usage, classify_usage)
         _add_usage(usage, plan_usage)
         questions = subqs["questions"][:max_subquestions]
@@ -204,6 +266,14 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         for _, retrieve_usage in retrieved:
             _add_usage(usage, retrieve_usage)
         sequential_estimate = round(sum(e["seconds"] for e in evidences), 2)
+
+        if skill_evidence:
+            v = skill_evidence["verdict"]
+            evidences = evidences + [{
+                "subquestion": "Refund eligibility (deterministic policy script)",
+                "summary": f"refund-policy/refund_eligibility.py -> eligible={v['eligible']}, "
+                           f"method={v['method']}: {v['reason']}",
+            }]
 
         # 3) resolve  4) critique  (+ one revision if the critic asks)
         await emit({"type": "step_start", "step": "resolve"})
@@ -233,7 +303,8 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
             "draft": draft,
             "critique": critique,
             "revised": revised is not None,
-            "skill_used": "policy-reply-formatter" if skill_body else None,
+            "skills_used": selected_names,
+            "skill_evidence": skill_evidence,   # {"skill","script","verdict"} or None -> UI badge
             "final_reply": final,
             "parallelism": {
                 "retrievers": len(questions),

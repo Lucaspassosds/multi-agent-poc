@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.db import get_pool
 from app.llm.base import ToolSpec
 from app.rag.search import hybrid_search as _rag_hybrid
+from app.skills import loader as _skills
 from app.tools import fixtures
 
 # --------------------------------------------------------------------------- #
@@ -278,16 +279,44 @@ async def get_payment_status(*, payment_id: str) -> PaymentStatusResult:
 
 
 async def check_refund_eligibility(*, payment_id: str) -> RefundEligibilityResult:
-    # Completed in Task 6 once run_skill_script + the refund-policy script exist.
-    raise NotImplementedError("wired in Task 6")
+    """Delegate to the refund-policy skill's level-3 script over the payment's metadata.
+    Ties Tools <-> Skills: the verdict is computed by refund_eligibility.py, not here."""
+    p = fixtures.PAYMENTS.get(payment_id)
+    if not p:
+        return RefundEligibilityResult(found=False, payment_id=payment_id,
+                                       reason=f"payment {payment_id} not found")
+    facts = {
+        "days_since_payment": p["age_days"],
+        "status": p["status"],
+        "refunded": p["refunded"],
+        "dispute_open": p["dispute_open"],
+        "is_subscription": p["is_subscription"],
+        "within_renewal_window": p["renewal_within_14d"],
+    }
+    run = await _skills.run_skill_script("refund-policy", "refund_eligibility.py", facts)
+    if not run.get("ok"):
+        return RefundEligibilityResult(found=False, payment_id=payment_id,
+                                       reason=run.get("error", "script failed"))
+    o = run["output"]
+    return RefundEligibilityResult(
+        found=True, payment_id=payment_id, eligible=o["eligible"], reason=o["reason"],
+        method=o["method"], policy_window_days=o["policy_window_days"],
+    )
 
 
 async def load_skill_tool(*, name: str) -> SkillBody:
-    raise NotImplementedError("wired in Task 6")
+    body = _skills.load_skill(name)
+    if body is None:
+        return SkillBody(found=False, name=name)
+    return SkillBody(found=True, name=name, body=body)
 
 
-async def run_skill_script_tool(*, name: str, script: str, args: dict | None = None) -> SkillScriptResult:
-    raise NotImplementedError("wired in Task 6")
+async def run_skill_script_tool(*, name: str, script: str,
+                                args: dict | None = None) -> SkillScriptResult:
+    run = await _skills.run_skill_script(name, script, args or {})
+    if not run.get("ok"):
+        return SkillScriptResult(ok=False, name=name, script=script, error=run.get("error"))
+    return SkillScriptResult(ok=True, name=name, script=script, output=run["output"])
 
 
 async def escalate(*, ticket_ref: str | None = None, reason: str,
