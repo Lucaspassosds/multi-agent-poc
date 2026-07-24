@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Warning } from '@phosphor-icons/react'
 import Badge from '../components/Badge'
+import KbBrowser from '../components/KbBrowser'
 import { getTrace, getTraces } from '../lib/api'
 import type { TraceDetail, TraceListItem } from '../lib/types'
 import { useViewMode } from '../lib/viewMode'
@@ -111,6 +112,8 @@ export default function ObservabilityPage() {
           </p>
         )}
       </section>
+
+      <KbBrowser />
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-mutedForeground">
