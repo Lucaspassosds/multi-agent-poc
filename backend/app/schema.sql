@@ -139,3 +139,7 @@ CREATE INDEX IF NOT EXISTS escalations_status_idx ON escalations (status, decide
 -- The ticket-status write half of the gate: applied to a saved ticket when an escalation is approved.
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS status   TEXT;   -- e.g. 'escalated'
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignee TEXT;   -- queue/agent handle
+
+-- Phase D: link each Postgres trace to its mirrored Langfuse trace (deep-link + score target).
+ALTER TABLE traces ADD COLUMN IF NOT EXISTS langfuse_trace_id TEXT;
+ALTER TABLE traces ADD COLUMN IF NOT EXISTS langfuse_url      TEXT;

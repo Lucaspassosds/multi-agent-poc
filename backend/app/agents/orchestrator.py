@@ -219,7 +219,7 @@ async def _select_and_run_skills(ticket: str) -> tuple[list[str], str | None, di
 
 async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
                          search_mode: str = "hybrid", emit: EmitFn = _noop_emit,
-                         trace_name: str = "triage") -> dict:
+                         trace_name: str = "triage", session_id: str | None = None) -> dict:
     """The actual classify->retrieve->resolve->critique->revision pipeline.
 
     `emit` is called around each phase so a caller (the SSE endpoint, via `triage_events`)
@@ -257,7 +257,7 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         await emit({"type": "step_done", "step": "retrieve", "index": index, "data": result})
         return result, step_usage
 
-    async with Trace(trace_name) as trace:
+    async with Trace(trace_name, session_id=session_id) as trace:
         # 1) classify + plan + skill-selection concurrently (all independent)
         # ── Concept: PARALLELISM ── classify + plan + skill-selection (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
         (classification, classify_usage), (subqs, plan_usage), \
@@ -339,7 +339,8 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
 
 
 async def triage_events(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
-                         search_mode: str = "hybrid", trace_name: str = "triage") -> AsyncGenerator[dict, None]:
+                         search_mode: str = "hybrid", trace_name: str = "triage",
+                         session_id: str | None = None) -> AsyncGenerator[dict, None]:
     """Streaming entrypoint: yields step_start/step_done events as the pipeline actually runs,
     then a final `{"type": "final", "result": ...}` event.
 
@@ -357,6 +358,7 @@ async def triage_events(ticket: str, max_subquestions: int = 3, use_skill: bool 
             result = await _run_pipeline(
                 ticket, max_subquestions=max_subquestions, use_skill=use_skill,
                 search_mode=search_mode, emit=queue.put, trace_name=trace_name,
+                session_id=session_id,
             )
             await queue.put({"type": "final", "result": result})
         except Exception as exc:  # noqa: BLE001 - re-raised below, not swallowed
@@ -378,12 +380,13 @@ async def triage_events(ticket: str, max_subquestions: int = 3, use_skill: bool 
 
 
 async def triage(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
-                  search_mode: str = "hybrid", trace_name: str = "triage") -> dict:
+                  search_mode: str = "hybrid", trace_name: str = "triage",
+                  session_id: str | None = None) -> dict:
     """Synchronous entrypoint (unchanged behavior/signature by default) — drains `triage_events`
     and returns the final result, exactly as before streaming existed."""
     async for event in triage_events(
         ticket, max_subquestions=max_subquestions, use_skill=use_skill, search_mode=search_mode,
-        trace_name=trace_name,
+        trace_name=trace_name, session_id=session_id,
     ):
         if event["type"] == "final":
             return event["result"]

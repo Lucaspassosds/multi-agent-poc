@@ -10,10 +10,11 @@ when the trace closes (Trace.__aexit__) — no live/streaming updates yet, that'
 # ── Concept: OBSERVABILITY ── framework-free Trace/span() via contextvars; nested + concurrent spans parent correctly; cost attribution.
 import contextvars
 import time
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from app import langfuse_client as lf
 from app.config import settings
 from app.db import get_pool
 from app.llm.base import Usage
@@ -72,9 +73,10 @@ class Trace:
     Postgres id) is only valid AFTER the `async with` block exits.
     """
 
-    def __init__(self, name: str, ticket_id: int | None = None):
+    def __init__(self, name: str, ticket_id: int | None = None, session_id: str | None = None):
         self.name = name
         self.ticket_id = ticket_id
+        self.session_id = session_id
         self.spans: list[SpanRecord] = []
         self.status = "ok"
         self.id: int | None = None
@@ -82,6 +84,9 @@ class Trace:
         self._root: SpanRecord | None = None
         self._trace_token = None
         self._parent_token = None
+        self.langfuse_trace_id: str | None = None
+        self.langfuse_url: str | None = None
+        self._lf_stack = ExitStack()
 
     def _new_span(self, name: str, span_type: str, model: str | None) -> SpanRecord:
         s = SpanRecord(id=self._next_id, parent_id=_current_parent.get(), name=name,
@@ -95,6 +100,10 @@ class Trace:
         self._root = self._new_span(self.name, "agent", None)
         self._root.started_at = time.time()
         self._parent_token = _current_parent.set(self._root.id)
+        self._lf_stack.enter_context(lf.lf_span(self.name))
+        lf.set_trace_attributes(name=self.name, session_id=self.session_id, tags=[self.name])
+        self.langfuse_trace_id = lf.current_trace_id()
+        self.langfuse_url = lf.current_trace_url()
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
@@ -102,6 +111,11 @@ class Trace:
         if exc is not None:
             self.status = "error"
             self._root.error = str(exc)[:500]
+        lf.set_trace_attributes(output={"status": self.status,
+                                        "total_cost_usd": self.total_cost_usd,
+                                        "total_tokens": self.total_tokens})
+        self._lf_stack.close()   # close the Langfuse root span
+        lf.flush()               # request-teardown flush (short-lived requests drop otherwise)
         _current_parent.reset(self._parent_token)
         _current_trace.reset(self._trace_token)
         await self._persist()
@@ -120,10 +134,12 @@ class Trace:
         async with pool.acquire() as conn, conn.transaction():
             self.id = await conn.fetchval(
                 """INSERT INTO traces (name, ticket_id, started_at, ended_at, status,
-                                        total_tokens, total_cost_usd)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id""",
+                                        total_tokens, total_cost_usd,
+                                        langfuse_trace_id, langfuse_url)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id""",
                 self.name, self.ticket_id, to_utc(self._root.started_at), to_utc(self._root.ended_at),
                 self.status, self.total_tokens, self.total_cost_usd,
+                self.langfuse_trace_id, self.langfuse_url,
             )
             id_map: dict[int, int] = {}
             for s in self.spans:
@@ -141,31 +157,45 @@ class Trace:
                 id_map[s.id] = db_id
 
 
+def _attach_lf(lf_obs, s: "SpanRecord") -> None:
+    """Fold the finished SpanRecord's metadata onto its mirrored Langfuse span."""
+    lf_obs.update(metadata={
+        "model": s.model,
+        "input_tokens": s.input_tokens,
+        "output_tokens": s.output_tokens,
+        "cache_read_tokens": s.cache_read_tokens,
+        "retries": s.retries,
+        "cost_usd": s.cost,
+        "error": s.error,
+    })
+
+
 @asynccontextmanager
 async def span(name: str, span_type: str = "subagent", model: str | None = None):
-    """Open a child span under whatever Trace/span is currently active (via contextvars).
-
-    Safe to use with no active Trace (e.g. standalone calls, tests): yields a throwaway,
-    unpersisted record so instrumented code never needs an `if tracing:` branch.
+    """Open a child span under whatever Trace/span is currently active (via contextvars), and
+    mirror it into a nested Langfuse span. Safe with no active Trace (yields a throwaway record).
     """
     trace = _current_trace.get()
-    if trace is None:
-        s = SpanRecord(id=-1, parent_id=None, name=name, span_type=span_type, model=model)
+    with lf.lf_span(name) as lf_obs:
+        if trace is None:
+            s = SpanRecord(id=-1, parent_id=None, name=name, span_type=span_type, model=model)
+            s.started_at = time.time()
+            try:
+                yield s
+            finally:
+                s.ended_at = time.time()
+                _attach_lf(lf_obs, s)
+            return
+
+        s = trace._new_span(name, span_type, model)
         s.started_at = time.time()
+        token = _current_parent.set(s.id)
         try:
             yield s
+        except Exception as exc:
+            s.error = str(exc)[:500]
+            raise
         finally:
             s.ended_at = time.time()
-        return
-
-    s = trace._new_span(name, span_type, model)
-    s.started_at = time.time()
-    token = _current_parent.set(s.id)
-    try:
-        yield s
-    except Exception as exc:
-        s.error = str(exc)[:500]
-        raise
-    finally:
-        s.ended_at = time.time()
-        _current_parent.reset(token)
+            _attach_lf(lf_obs, s)
+            _current_parent.reset(token)

@@ -36,7 +36,8 @@ async def triage_endpoint(
 
     `skill=false` disables the policy-reply-formatter skill (to show its effect). `search_mode`
     forces the retrievers onto lexical/semantic-only search (Phase 7's regression demo)."""
-    return await triage(body.message, use_skill=skill, search_mode=search_mode)
+    return await triage(body.message, use_skill=skill, search_mode=search_mode,
+                        session_id=body.session_id)
 
 
 @router.post("/triage/stream")
@@ -55,7 +56,8 @@ async def triage_stream_endpoint(
         final_result = None
         errored = False
         try:
-            async for event in triage_events(body.message, use_skill=skill, search_mode=search_mode):
+            async for event in triage_events(body.message, use_skill=skill, search_mode=search_mode,
+                                             session_id=body.session_id):
                 if event.get("type") == "final":
                     final_result = event.get("result")
                 yield f"data: {json.dumps(event, default=str)}\n\n"
