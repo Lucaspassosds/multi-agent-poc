@@ -7,19 +7,14 @@ from pydantic import BaseModel
 
 from app.agents.loop import run_agent
 from app.agents.orchestrator import triage, triage_events
+from app.agents.prompts import PROMPTS
 from app.api.tickets import save_ticket
 from app.config import settings
 from app.mcp.client import list_tool_specs, make_dispatch, mcp_session
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
-_SYSTEM = (
-    "You are a payments support triage assistant. "
-    "ALWAYS call hybrid_search to find relevant KB articles and past tickets before answering. "
-    "Ground your answer in what you find and cite sources by their title. "
-    "If the issue cannot be resolved from available information, call escalate. "
-    "Keep the final reply concise and customer-ready."
-)
+_SYSTEM = PROMPTS["answer"]
 
 
 class AgentIn(BaseModel):

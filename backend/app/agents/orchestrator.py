@@ -18,6 +18,7 @@ from typing import AsyncGenerator, Awaitable, Callable
 
 from pydantic import BaseModel
 
+from app.agents.prompts import PROMPTS
 from app.config import settings
 from app.llm.base import user
 from app.llm.factory import get_provider
@@ -82,10 +83,7 @@ async def _complete_text(model, system, message, max_tokens=800):
 async def _classify(ticket: str):
     async with span("classifier", "subagent", model=settings.model_classify) as s:
         result, usage = await _complete_json(
-            settings.model_classify,
-            "Classify the support ticket. category in {billing,refund,subscription,payment_failure,dispute,other}; "
-            "priority in {low,medium,high}; sentiment in {angry,neutral,happy}.",
-            ticket, Classification,
+            settings.model_classify, PROMPTS["classify"], ticket, Classification,
         )
         s.record_usage(usage)
         return result, usage
@@ -94,10 +92,7 @@ async def _classify(ticket: str):
 async def _plan(ticket: str):
     async with span("planner", "subagent", model=settings.model_resolve) as s:
         result, usage = await _complete_json(
-            settings.model_resolve,
-            "Plan retrieval for this support ticket. Produce 2-3 focused search sub-questions that will surface "
-            "the KB articles and past tickets needed to resolve it.",
-            ticket, SubQuestions,
+            settings.model_resolve, PROMPTS["plan"], ticket, SubQuestions,
         )
         s.record_usage(usage)
         return result, usage
@@ -110,9 +105,7 @@ async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
         rows = await search_mod.SEARCH_FNS[search_mode](subquestion, k=4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
         summary, usage = await _complete_text(
-            settings.model_classify,
-            "Summarize the evidence into 2-3 sentences that answer the question. Cite sources as [title]. "
-            "Use ONLY the evidence provided.",
+            settings.model_classify, PROMPTS["retrieve"],
             f"Question: {subquestion}\n\nEvidence:\n{evidence}",
             max_tokens=300,
         )
@@ -135,10 +128,7 @@ async def _resolve(ticket, classification, evidences, fixes=None, skill_body=Non
     async with span(span_name, "subagent", model=settings.model_resolve) as s:
         findings = "\n\n".join(f"Q: {e['subquestion']}\nFindings: {e['summary']}" for e in evidences)
         extra = f"\n\nRevise the reply to fix these issues: {fixes}" if fixes else ""
-        system = (
-            "You are a payments support agent. Write a concise, friendly, customer-ready reply grounded ONLY in "
-            "the findings. Cite article titles in-line. Never invent policy."
-        )
+        system = PROMPTS["resolve"]
         # On-demand skill: inject the formatter's house style only when we're drafting a reply.
         if skill_body:
             system += "\n\n# House style (follow exactly):\n" + skill_body
@@ -155,10 +145,7 @@ async def _critique(ticket, draft, evidences):
     async with span("critic", "subagent", model=settings.model_critic) as s:
         findings = "\n\n".join(e["summary"] for e in evidences)
         result, usage = await _complete_json(
-            settings.model_critic,
-            "You are a QA critic. Check the draft reply against the findings for unsupported claims "
-            "(hallucination), missing policy points, and wrong tone. verdict='approve' if solid, else 'revise'. "
-            "List concrete issues and fixes.",
+            settings.model_critic, PROMPTS["critique"],
             f"Ticket: {ticket}\n\nFindings:\n{findings}\n\nDraft reply:\n{draft}",
             Critique,
         )

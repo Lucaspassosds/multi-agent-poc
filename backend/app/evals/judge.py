@@ -7,6 +7,7 @@ import json
 
 from pydantic import BaseModel
 
+from app.agents.prompts import PROMPTS
 from app.config import settings
 from app.llm.base import user
 from app.llm.factory import get_provider
@@ -33,7 +34,7 @@ async def judge(case: dict, result: dict):
     )
     resp = await get_provider().complete(
         model=settings.model_critic,
-        system="You are an impartial QA judge for a payments support system. Be strict and concrete.",
+        system=PROMPTS["judge"],
         messages=[user(prompt)],
         max_tokens=500,
         response_schema=JudgeVerdict,
