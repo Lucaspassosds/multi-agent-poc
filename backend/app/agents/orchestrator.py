@@ -291,25 +291,30 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
                 "cited": [],
             }]
 
-        # 3) resolve  4) critique  (+ one revision if the critic asks)
+        # 3) resolve  4) critique  (+ bounded revise loop: re-critique after each revision,
+        #    exiting on approve or settings.max_revisions)
         await emit({"type": "step_start", "step": "resolve"})
         draft, draft_usage = await _resolve(ticket, classification, evidences, skill_body=skill_body)
         _add_usage(usage, draft_usage)
         await emit({"type": "step_done", "step": "resolve", "data": {"draft": draft}})
 
-        await emit({"type": "step_start", "step": "critique"})
-        critique, critique_usage = await _critique(ticket, draft, evidences)
-        _add_usage(usage, critique_usage)
-        await emit({"type": "step_done", "step": "critique", "data": critique})
-
-        revised = None
-        if critique.get("verdict") != "approve":
-            await emit({"type": "step_start", "step": "revise"})
-            revised, revise_usage = await _resolve(ticket, classification, evidences,
-                                                   fixes=critique.get("fixes"), skill_body=skill_body)
+        final = draft
+        revisions = 0
+        critiques = []
+        while True:
+            await emit({"type": "step_start", "step": "critique", "iteration": revisions})
+            critique, critique_usage = await _critique(ticket, final, evidences)
+            _add_usage(usage, critique_usage)
+            critiques.append(critique)
+            await emit({"type": "step_done", "step": "critique", "iteration": revisions, "data": critique})
+            if critique.get("verdict") == "approve" or revisions >= settings.max_revisions:
+                break
+            revisions += 1
+            await emit({"type": "step_start", "step": "revise", "iteration": revisions})
+            final, revise_usage = await _resolve(ticket, classification, evidences,
+                                                  fixes=critique.get("fixes"), skill_body=skill_body)
             _add_usage(usage, revise_usage)
-            await emit({"type": "step_done", "step": "revise", "data": {"revised": revised}})
-        final = revised or draft
+            await emit({"type": "step_done", "step": "revise", "iteration": revisions, "data": {"revised": final}})
 
         result = {
             "ticket": ticket,
@@ -317,8 +322,10 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
             "subquestions": questions,
             "evidence": evidences,
             "draft": draft,
-            "critique": critique,
-            "revised": revised is not None,
+            "critique": critiques[-1],
+            "critiques": critiques,
+            "revised": revisions > 0,
+            "revisions": revisions,
             "skills_used": selected_names,
             "skill_evidence": skill_evidence,   # {"skill","script","verdict"} or None -> UI badge
             "final_reply": final,
