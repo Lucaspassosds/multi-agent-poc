@@ -52,11 +52,12 @@ async def semantic_search(query: str, k: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-async def hybrid_search(query: str, k: int = 10, rrf_k: int = 60, pool_n: int = 20) -> list[dict]:
+async def hybrid_search(query: str, k: int = 10, rrf_k: int = 60, candidate_pool_size: int = 20) -> list[dict]:
+    # Pull a wider candidate pool from each retriever, then fuse down to k — RRF needs depth to rank.
     # Run both retrievals concurrently — a first taste of the parallelism theme.
     lex, sem = await asyncio.gather(
-        lexical_search(query, pool_n),
-        semantic_search(query, pool_n),
+        lexical_search(query, candidate_pool_size),
+        semantic_search(query, candidate_pool_size),
     )
 
     scores: dict[int, float] = {}
