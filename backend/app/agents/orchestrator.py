@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from app.agents.prompts import PROMPTS
 from app.config import settings
-from app.llm.base import user
+from app.llm.base import Usage, user
 from app.llm.factory import get_provider
 from app.observability import Trace, span
 from app.rag import search as search_mod
@@ -166,7 +166,7 @@ async def _critique(ticket, draft, evidences):
         return result, usage
 
 
-async def _select_and_run_skills(ticket: str) -> tuple[list[str], str | None, dict | None]:
+async def _select_and_run_skills(ticket: str) -> tuple[list[str], str | None, dict | None, Usage]:
     """Level 1 -> 2 -> 3 progressive disclosure, driven by the model (not hardcoded):
     show only names+descriptions, let the model pick, load the chosen bodies, and — if
     refund-policy is chosen — run its level-3 script so its verdict shapes the reply."""
@@ -190,22 +190,30 @@ async def _select_and_run_skills(ticket: str) -> tuple[list[str], str | None, di
     body = "\n\n".join(bodies) if bodies else None
 
     evidence = None
+    total_usage = usage
     if "refund-policy" in names:
         # Level 3: extract the facts the script needs, then run it.
-        facts, u = await _complete_json(
-            settings.model_classify,
-            "Extract refund facts from the ticket as JSON. Unknown numbers -> null; unknown "
-            "booleans -> false. Fields: days_since_payment (int|null), status "
-            "(succeeded|pending|failed|refunded|disputed), refunded (bool), dispute_open (bool), "
-            "is_subscription (bool), within_renewal_window (bool).",
-            ticket, _RefundFacts,
+        async with span("skill_facts_extract", "subagent", model=settings.model_classify) as s2:
+            facts, u = await _complete_json(
+                settings.model_classify,
+                "Extract refund facts from the ticket as JSON. Unknown numbers -> null; unknown "
+                "booleans -> false. Fields: days_since_payment (int|null), status "
+                "(succeeded|pending|failed|refunded|disputed), refunded (bool), dispute_open (bool), "
+                "is_subscription (bool), within_renewal_window (bool).",
+                ticket, _RefundFacts,
+            )
+            s2.record_usage(u)
+        total_usage = Usage(
+            input_tokens=usage.input_tokens + u.input_tokens,
+            output_tokens=usage.output_tokens + u.output_tokens,
+            cached_tokens=usage.cached_tokens + u.cached_tokens,
         )
         async with span("skill_script:refund_eligibility", "tool"):
             run = await run_skill_script("refund-policy", "refund_eligibility.py", facts)
         if run.get("ok"):
             evidence = {"skill": "refund-policy", "script": "refund_eligibility.py",
                         "verdict": run["output"]}
-    return names, body, evidence
+    return names, body, evidence, total_usage
 
 
 async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool = True,
@@ -227,7 +235,7 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         # Progressive disclosure: model-driven skill selection (+ level-3 run) when drafting a reply.
         # Runs INSIDE the trace (below) so skill_select / skill_script spans attach to it.
         if not use_skill:
-            return [], None, None
+            return [], None, None, Usage()
         return await _select_and_run_skills(ticket)
 
     async def _classify_emit():
@@ -252,10 +260,11 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         # 1) classify + plan + skill-selection concurrently (all independent)
         # ── Concept: PARALLELISM ── classify + plan + skill-selection (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
         (classification, classify_usage), (subqs, plan_usage), \
-            (selected_names, skill_body, skill_evidence) = await asyncio.gather(
+            (selected_names, skill_body, skill_evidence, skill_usage) = await asyncio.gather(
                 _classify_emit(), _plan_emit(), _select_emit())
         _add_usage(usage, classify_usage)
         _add_usage(usage, plan_usage)
+        _add_usage(usage, skill_usage)
         questions = subqs["questions"][:max_subquestions]
 
         # 2) retrievers in parallel — measure parallel vs would-be-sequential wall-clock
