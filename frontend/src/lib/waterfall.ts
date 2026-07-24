@@ -137,3 +137,49 @@ export function triageRestoreRows(trace: TraceDetail, evidence: Evidence[]): Wat
     }
   })
 }
+
+export interface RoleCost {
+  seriesKey: SeriesKey
+  label: string
+  cost: number
+  tokens: number
+}
+
+/** Per-role cost + token rollup for the Run Inspector, summed over the span tree by series. */
+export function perRoleCost(trace: TraceDetail): RoleCost[] {
+  const byKey = new Map<SeriesKey, RoleCost>()
+  function walk(spans: SpanNode[]) {
+    for (const s of spans) {
+      const key = seriesKeyForName(s.name)
+      const cur = byKey.get(key) ?? { seriesKey: key, label: SERIES_LABEL[key], cost: 0, tokens: 0 }
+      cur.cost += s.cost_usd ?? 0
+      cur.tokens += (s.input_tokens ?? 0) + (s.output_tokens ?? 0)
+      byKey.set(key, cur)
+      walk(s.children)
+    }
+  }
+  walk(trace.spans)
+  return SERIES_ORDER.map((k) => byKey.get(k)).filter(
+    (r): r is RoleCost => !!r && (r.cost > 0 || r.tokens > 0),
+  )
+}
+
+/** Sequential-vs-parallel wall-clock speedup for the parallel retrievers (spec 07), derived from
+ * span timestamps — no backend field needed. Returns null when there are <2 retrievers. */
+export function retrievalSpeedup(trace: TraceDetail): { sequential: number; parallel: number; speedup: number } | null {
+  const retrievers: SpanNode[] = []
+  function walk(spans: SpanNode[]) {
+    for (const s of spans) {
+      if (seriesKeyForName(s.name) === 'retriever') retrievers.push(s)
+      walk(s.children)
+    }
+  }
+  walk(trace.spans)
+  if (retrievers.length < 2) return null
+  const sequential = retrievers.reduce((a, s) => a + s.duration_seconds, 0)
+  const starts = retrievers.map((s) => new Date(s.started_at).getTime())
+  const ends = retrievers.map((s) => new Date(s.ended_at).getTime())
+  const parallel = (Math.max(...ends) - Math.min(...starts)) / 1000
+  if (parallel <= 0) return null
+  return { sequential, parallel, speedup: sequential / parallel }
+}
