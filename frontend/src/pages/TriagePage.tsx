@@ -65,7 +65,8 @@ type RunAction =
   | { type: 'error'; message: string }
   | { type: 'finish' }
   | { type: 'viewStart'; id: number }
-  | { type: 'viewLoaded'; result: TriageResult; rows: WaterfallRow[] }
+  | { type: 'viewResult'; result: TriageResult }
+  | { type: 'viewRows'; rows: WaterfallRow[] }
 
 function upsert(rows: WaterfallRow[], row: WaterfallRow): WaterfallRow[] {
   const idx = rows.findIndex((r) => r.id === row.id)
@@ -88,19 +89,20 @@ function runReducer(state: RunState, action: RunAction): RunState {
     case 'result':
       return { ...state, result: action.value }
     case 'error':
-      return { ...state, status: 'error', error: action.message }
+      return { ...state, error: action.message }
     case 'finish':
-      return state.status === 'error' ? state : { ...state, status: 'done' }
+      return { ...state, status: state.error ? 'error' : 'done' }
     case 'viewStart':
       return { ...IDLE, viewingId: action.id }
-    case 'viewLoaded':
+    case 'viewResult':
       return {
         ...state,
         status: 'done',
         result: action.result,
         classification: action.result.classification,
-        rows: action.rows,
       }
+    case 'viewRows':
+      return { ...state, rows: action.rows }
     default:
       return state
   }
@@ -149,12 +151,12 @@ export default function TriagePage() {
     dispatch({ type: 'viewStart', id })
     try {
       const res = await getTicket(id)
-      let rows: WaterfallRow[] = []
+      dispatch({ type: 'viewResult', result: res })
       if (res.trace_id) {
         const trace = await getTrace(res.trace_id)
-        rows = triageRestoreRows(trace, res.evidence)
+        const rows = triageRestoreRows(trace, res.evidence)
+        dispatch({ type: 'viewRows', rows })
       }
-      dispatch({ type: 'viewLoaded', result: res, rows })
     } catch (e) {
       dispatch({ type: 'error', message: String(e) })
     }
