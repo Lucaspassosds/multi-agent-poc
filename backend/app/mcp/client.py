@@ -14,6 +14,8 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from app.config import settings
 from app.llm.base import ToolSpec
+from app.rag import search
+from app.tools import registry
 
 
 @asynccontextmanager
@@ -48,3 +50,53 @@ def make_dispatch(session):
         return "\n".join(texts) if texts else json.dumps({"result": "(no textual content)"})
 
     return dispatch
+
+
+# ── Concept: MCP AS THE BACKBONE ── the orchestrator's hybrid retrieval runs THROUGH the
+# protocol when the mcp service is up, and degrades to the in-process registry when it's down.
+def _hits_to_rows(result_json: str) -> list[dict]:
+    """MCP hybrid_search returns our HybridSearchResult as structured JSON; project its
+    typed hits back to the row shape the retriever subagent already consumes."""
+    data = json.loads(result_json)
+    hits = data.get("hits", []) if isinstance(data, dict) else []
+    return [{"id": h["chunk_id"], "document_id": h["document_id"],
+             "source_type": h["source_type"], "title": h["title"],
+             "content": h["preview"], "score": h["scores"]["fused"]}
+            for h in hits]
+
+
+@asynccontextmanager
+async def mcp_search_or_local(search_mode: str):
+    """Yield (search_fn, transport). For hybrid mode, probe the MCP server and — if up —
+    run retrieval THROUGH the protocol (MCP is the backbone). If the mcp service is down,
+    or the mode is lexical/semantic (eval-regression, not exposed over MCP), fall back to
+    the in-process path. Capability negotiation (server name/proto/primitives) is logged."""
+    if search_mode != "hybrid":
+        # rag/search.py already exposes a SEARCH_FNS dispatch dict
+        # ({"lexical": lexical_search, "semantic": semantic_search, "hybrid": hybrid_search})
+        # as the single source of truth for mode dispatch — reuse it instead of inlining a
+        # second dict here.
+        async def local(subq: str, k: int):
+            return await search.SEARCH_FNS[search_mode](subq, k)
+        yield local, "in-process"
+        return
+
+    try:
+        async with mcp_session() as session:
+            init_tools = await session.list_tools()
+            print(f"[mcp] backbone up: tools={[t.name for t in init_tools.tools]}")
+
+            async def via_mcp(subq: str, k: int):
+                res = await session.call_tool("hybrid_search", arguments={"query": subq, "k": k})
+                texts = [c.text for c in res.content if getattr(c, "type", None) == "text"]
+                return _hits_to_rows(texts[0]) if texts else []
+
+            yield via_mcp, "mcp"
+            return
+    except Exception as exc:  # noqa: BLE001 - MCP down -> graceful in-process fallback
+        print(f"[mcp] backbone unavailable ({exc!r}); falling back to in-process registry")
+
+    async def fallback(subq: str, k: int):
+        result = await registry.hybrid_search(query=subq, k=k)
+        return _hits_to_rows(result.model_dump_json())
+    yield fallback, "in-process"

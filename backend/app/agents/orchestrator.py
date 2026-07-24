@@ -22,8 +22,8 @@ from app.agents.prompts import PROMPTS
 from app.config import settings
 from app.llm.base import Usage, user
 from app.llm.factory import get_provider
+from app.mcp.client import mcp_search_or_local
 from app.observability import Trace, span
-from app.rag import search as search_mod
 from app.skills.loader import list_skills, load_skill, run_skill_script
 
 
@@ -111,11 +111,12 @@ async def _plan(ticket: str):
         return result, usage
 
 
-async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
-    """A retriever subagent: search (hybrid by default), then summarize into a compact, cited evidence note."""
+async def _retrieve(subquestion: str, search_fn):
+    """A retriever subagent: search (via the injected transport), then summarize into a
+    compact, cited evidence note."""
     async with span("retriever", "subagent", model=settings.model_classify) as s:
         t0 = time.time()
-        rows = await search_mod.SEARCH_FNS[search_mode](subquestion, k=4)
+        rows = await search_fn(subquestion, 4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
         summary, usage = await _complete_text(
             settings.model_classify, PROMPTS["retrieve"],
@@ -250,9 +251,9 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         await emit({"type": "step_done", "step": "plan", "data": result})
         return result, step_usage
 
-    async def _retrieve_emit(index: int, subquestion: str):
+    async def _retrieve_emit(index: int, subquestion: str, search_fn):
         await emit({"type": "step_start", "step": "retrieve", "index": index, "subquestion": subquestion})
-        result, step_usage = await _retrieve(subquestion, search_mode)
+        result, step_usage = await _retrieve(subquestion, search_fn)
         await emit({"type": "step_done", "step": "retrieve", "index": index, "data": result})
         return result, step_usage
 
@@ -267,9 +268,14 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         _add_usage(usage, skill_usage)
         questions = subqs["questions"][:max_subquestions]
 
-        # 2) retrievers in parallel — measure parallel vs would-be-sequential wall-clock
+        # 2) retrievers in parallel — routed through MCP (the backbone) with in-process fallback
         t0 = time.time()
-        retrieved = await asyncio.gather(*[_retrieve_emit(i, q) for i, q in enumerate(questions)])
+        retrieval_transport = "in-process"
+        async with mcp_search_or_local(search_mode) as (search_fn, transport):
+            retrieval_transport = transport
+            retrieved = await asyncio.gather(
+                *[_retrieve_emit(i, q, search_fn) for i, q in enumerate(questions)]
+            )
         parallel_seconds = round(time.time() - t0, 2)
         evidences = [r for r, _ in retrieved]
         for _, retrieve_usage in retrieved:
@@ -321,6 +327,7 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
                 "sequential_estimate_seconds": sequential_estimate,
                 "speedup": round(sequential_estimate / parallel_seconds, 2) if parallel_seconds else None,
             },
+            "retrieval_transport": retrieval_transport,
             "usage": usage,
             "total_seconds": round(time.time() - started, 2),
         }
