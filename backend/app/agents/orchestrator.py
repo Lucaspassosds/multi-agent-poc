@@ -335,6 +335,8 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
 
     result["trace_id"] = trace.id
     result["cost_usd"] = trace.total_cost_usd
+    result["langfuse_trace_id"] = trace.langfuse_trace_id
+    result["langfuse_url"] = trace.langfuse_url
     return result
 
 
