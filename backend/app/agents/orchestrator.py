@@ -288,6 +288,7 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
                 "subquestion": "Refund eligibility (deterministic policy script)",
                 "summary": f"refund-policy/refund_eligibility.py -> eligible={v['eligible']}, "
                            f"method={v['method']}: {v['reason']}",
+                "cited": [],
             }]
 
         # 3) resolve  4) critique  (+ one revision if the critic asks)
