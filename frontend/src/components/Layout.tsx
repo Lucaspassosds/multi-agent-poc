@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import ViewModeToggle from './ViewModeToggle'
 
 const links = [
   { to: '/', label: 'Triage', end: true },
-  { to: '/observability', label: 'Observability' },
-  { to: '/evals', label: 'Evals' },
+  { to: '/observability', label: 'Run Inspector' },
+  { to: '/evals', label: 'Quality Dashboard' },
 ]
 
 export default function Layout() {
@@ -33,6 +34,9 @@ export default function Layout() {
               {l.label}
             </NavLink>
           ))}
+          <div className="ml-auto">
+            <ViewModeToggle />
+          </div>
         </nav>
       </header>
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
