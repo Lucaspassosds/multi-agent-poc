@@ -60,13 +60,13 @@ async def _noop_emit(_event: dict) -> None:
     pass
 
 
-def _accum(total: dict, usage) -> None:
+def _add_usage(total: dict, usage) -> None:
     total["input_tokens"] += usage.input_tokens
     total["output_tokens"] += usage.output_tokens
     total["cached_tokens"] += usage.cached_tokens
 
 
-async def _json(model, system, message, schema, max_tokens=1500):
+async def _complete_json(model, system, message, schema, max_tokens=1500):
     # thinking_budget=1: structured extraction needs no chain-of-thought, and leaving thinking
     # on can consume the whole output budget and truncate the JSON. The SDK docs say 0 means
     # "disabled", but the live API rejects 0 with 400 INVALID_ARGUMENT for gemini-flash-lite-latest
@@ -78,7 +78,7 @@ async def _json(model, system, message, schema, max_tokens=1500):
     return json.loads(resp.text), resp.usage
 
 
-async def _text(model, system, message, max_tokens=800):
+async def _complete_text(model, system, message, max_tokens=800):
     resp = await get_provider().complete(
         model=model, system=system, messages=[user(message)], max_tokens=max_tokens
     )
@@ -90,7 +90,7 @@ async def _text(model, system, message, max_tokens=800):
 # ── Concept: CONTEXT MANAGEMENT (SUBAGENTS) ── each step is a fresh, isolated LLM call; only a compact result returns, never a growing transcript.
 async def _classify(ticket: str):
     async with span("classifier", "subagent", model=settings.model_classify) as s:
-        result, usage = await _json(
+        result, usage = await _complete_json(
             settings.model_classify,
             "Classify the support ticket. category in {billing,refund,subscription,payment_failure,dispute,other}; "
             "priority in {low,medium,high}; sentiment in {angry,neutral,happy}.",
@@ -102,7 +102,7 @@ async def _classify(ticket: str):
 
 async def _plan(ticket: str):
     async with span("planner", "subagent", model=settings.model_resolve) as s:
-        result, usage = await _json(
+        result, usage = await _complete_json(
             settings.model_resolve,
             "Plan retrieval for this support ticket. Produce 2-3 focused search sub-questions that will surface "
             "the KB articles and past tickets needed to resolve it.",
@@ -118,7 +118,7 @@ async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
         t0 = time.time()
         rows = await _SEARCH_FNS[search_mode](subquestion, k=4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
-        summary, usage = await _text(
+        summary, usage = await _complete_text(
             settings.model_classify,
             "Summarize the evidence into 2-3 sentences that answer the question. Cite sources as [title]. "
             "Use ONLY the evidence provided.",
@@ -151,7 +151,7 @@ async def _resolve(ticket, classification, evidences, fixes=None, skill_body=Non
         # On-demand skill: inject the formatter's house style only when we're drafting a reply.
         if skill_body:
             system += "\n\n# House style (follow exactly):\n" + skill_body
-        text, usage = await _text(
+        text, usage = await _complete_text(
             settings.model_resolve, system,
             f"Ticket: {ticket}\nClassification: {classification}\n\n{findings}{extra}",
             max_tokens=700,
@@ -163,7 +163,7 @@ async def _resolve(ticket, classification, evidences, fixes=None, skill_body=Non
 async def _critique(ticket, draft, evidences):
     async with span("critic", "subagent", model=settings.model_critic) as s:
         findings = "\n\n".join(e["summary"] for e in evidences)
-        result, usage = await _json(
+        result, usage = await _complete_json(
             settings.model_critic,
             "You are a QA critic. Check the draft reply against the findings for unsupported claims "
             "(hallucination), missing policy points, and wrong tone. verdict='approve' if solid, else 'revise'. "
@@ -194,27 +194,28 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
 
     async def _classify_emit():
         await emit({"type": "step_start", "step": "classify"})
-        result, u = await _classify(ticket)
+        result, step_usage = await _classify(ticket)
         await emit({"type": "step_done", "step": "classify", "data": result})
-        return result, u
+        return result, step_usage
 
     async def _plan_emit():
         await emit({"type": "step_start", "step": "plan"})
-        result, u = await _plan(ticket)
+        result, step_usage = await _plan(ticket)
         await emit({"type": "step_done", "step": "plan", "data": result})
-        return result, u
+        return result, step_usage
 
     async def _retrieve_emit(index: int, subquestion: str):
         await emit({"type": "step_start", "step": "retrieve", "index": index, "subquestion": subquestion})
-        result, u = await _retrieve(subquestion, search_mode)
+        result, step_usage = await _retrieve(subquestion, search_mode)
         await emit({"type": "step_done", "step": "retrieve", "index": index, "data": result})
-        return result, u
+        return result, step_usage
 
     async with Trace(trace_name) as trace:
         # 1) classify + plan concurrently (independent)
         # ── Concept: PARALLELISM ── classify + plan (and below, all retrievers) run concurrently via asyncio.gather; overlap is provable on span timestamps.
-        (classification, u1), (subqs, u2) = await asyncio.gather(_classify_emit(), _plan_emit())
-        _accum(usage, u1); _accum(usage, u2)
+        (classification, classify_usage), (subqs, plan_usage) = await asyncio.gather(_classify_emit(), _plan_emit())
+        _add_usage(usage, classify_usage)
+        _add_usage(usage, plan_usage)
         questions = subqs["questions"][:max_subquestions]
 
         # 2) retrievers in parallel — measure parallel vs would-be-sequential wall-clock
@@ -222,25 +223,27 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         retrieved = await asyncio.gather(*[_retrieve_emit(i, q) for i, q in enumerate(questions)])
         parallel_seconds = round(time.time() - t0, 2)
         evidences = [r for r, _ in retrieved]
-        for _, u in retrieved:
-            _accum(usage, u)
+        for _, retrieve_usage in retrieved:
+            _add_usage(usage, retrieve_usage)
         sequential_estimate = round(sum(e["seconds"] for e in evidences), 2)
 
         # 3) resolve  4) critique  (+ one revision if the critic asks)
         await emit({"type": "step_start", "step": "resolve"})
-        draft, u3 = await _resolve(ticket, classification, evidences, skill_body=skill_body); _accum(usage, u3)
+        draft, draft_usage = await _resolve(ticket, classification, evidences, skill_body=skill_body)
+        _add_usage(usage, draft_usage)
         await emit({"type": "step_done", "step": "resolve", "data": {"draft": draft}})
 
         await emit({"type": "step_start", "step": "critique"})
-        critique, u4 = await _critique(ticket, draft, evidences); _accum(usage, u4)
+        critique, critique_usage = await _critique(ticket, draft, evidences)
+        _add_usage(usage, critique_usage)
         await emit({"type": "step_done", "step": "critique", "data": critique})
 
         revised = None
         if critique.get("verdict") != "approve":
             await emit({"type": "step_start", "step": "revise"})
-            revised, u5 = await _resolve(ticket, classification, evidences,
-                                         fixes=critique.get("fixes"), skill_body=skill_body)
-            _accum(usage, u5)
+            revised, revise_usage = await _resolve(ticket, classification, evidences,
+                                                   fixes=critique.get("fixes"), skill_body=skill_body)
+            _add_usage(usage, revise_usage)
             await emit({"type": "step_done", "step": "revise", "data": {"revised": revised}})
         final = revised or draft
 
