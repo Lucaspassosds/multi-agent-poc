@@ -109,5 +109,7 @@ async def get_trace(trace_id: int):
         "total_tokens": trace_row["total_tokens"],
         "total_cost_usd": float(trace_row["total_cost_usd"]),
         "cache_hit_pct": _pct(total_cache, total_input),
+        "langfuse_trace_id": trace_row["langfuse_trace_id"],
+        "langfuse_url": trace_row["langfuse_url"],
         "spans": _build_tree(spans),
     }
