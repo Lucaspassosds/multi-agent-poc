@@ -59,7 +59,9 @@ class SpanRecord:
         return cost_usd(self.model, self.input_tokens, self.output_tokens)
 
 
-def _dt(ts: float) -> datetime:
+def to_utc(ts: float) -> datetime:
+    """Epoch seconds → aware UTC datetime. Shared with evals/runner.py so trace and eval-run
+    rows are persisted with identical timestamp handling."""
     return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
@@ -120,7 +122,7 @@ class Trace:
                 """INSERT INTO traces (name, ticket_id, started_at, ended_at, status,
                                         total_tokens, total_cost_usd)
                    VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id""",
-                self.name, self.ticket_id, _dt(self._root.started_at), _dt(self._root.ended_at),
+                self.name, self.ticket_id, to_utc(self._root.started_at), to_utc(self._root.ended_at),
                 self.status, self.total_tokens, self.total_cost_usd,
             )
             id_map: dict[int, int] = {}
@@ -132,7 +134,7 @@ class Trace:
                                            cache_read_tokens, cache_creation_tokens, retries, error)
                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
                     self.id, parent_db_id, s.name, s.span_type, s.model,
-                    _dt(s.started_at), _dt(s.ended_at or s.started_at),
+                    to_utc(s.started_at), to_utc(s.ended_at or s.started_at),
                     s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens,
                     s.retries, s.error,
                 )

@@ -10,7 +10,6 @@ lexical/semantic-only retrieval to show a deliberate regression (spec's acceptan
 import asyncio
 import json
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from app.agents.orchestrator import triage
@@ -18,7 +17,7 @@ from app.config import settings
 from app.db import get_pool
 from app.evals.judge import judge
 from app.evals.metrics import citation_coverage, classification_match, retrieval_hit
-from app.observability import cost_usd
+from app.observability import cost_usd, to_utc
 
 _GOLDEN_PATH = Path(__file__).parent / "golden.json"
 # Gemini free tier caps at 15 requests/MINUTE for this model, and a single triage() case alone
@@ -30,10 +29,6 @@ _CONCURRENCY = 1
 
 def _load_golden() -> list[dict]:
     return json.loads(_GOLDEN_PATH.read_text())
-
-
-def _dt(ts: float) -> datetime:
-    return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
 async def _run_case(case: dict, search_mode: str, sem: asyncio.Semaphore) -> dict:
@@ -85,7 +80,7 @@ async def _persist(retrieval_mode: str, started: float, ended: float,
                                        retrieval_hit_rate, citation_coverage,
                                        faithfulness_avg, helpfulness_avg, total_cost_usd)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
-            _dt(started), _dt(ended), retrieval_mode, aggregate["n_cases"],
+            to_utc(started), to_utc(ended), retrieval_mode, aggregate["n_cases"],
             aggregate["classification_accuracy"], aggregate["priority_accuracy"],
             aggregate["retrieval_hit_rate"], aggregate["citation_coverage"],
             aggregate["faithfulness_avg"], aggregate["helpfulness_avg"], aggregate["total_cost_usd"],
@@ -133,8 +128,8 @@ async def run_eval(retrieval_mode: str = "hybrid") -> dict:
     return {
         "id": run_id,
         "retrieval_mode": retrieval_mode,
-        "started_at": _dt(started).isoformat(),
-        "ended_at": _dt(ended).isoformat(),
+        "started_at": to_utc(started).isoformat(),
+        "ended_at": to_utc(ended).isoformat(),
         **aggregate,
         "cases": per_case,
     }
