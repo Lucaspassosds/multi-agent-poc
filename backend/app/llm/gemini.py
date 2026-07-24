@@ -13,8 +13,10 @@ from google import genai
 from google.genai import types
 
 from app.config import settings
+from app.langfuse_client import lf_generation
 from app.llm.base import LLMResponse, Message, ToolCall, ToolSpec, Usage
-from app.llm.retry import with_retry
+from app.llm.retry import with_retry, last_attempts
+from app.observability import cost_usd
 
 
 def _to_contents(messages: list[Message]) -> list[types.Content]:
@@ -128,12 +130,25 @@ class GeminiProvider:
         # `cache` is a no-op hint for Gemini (implicit caching is automatic); it maps to
         # explicit cache_control when the Anthropic provider is added.
         tb = thinking_budget if _supports_thinking(model) else None
-        resp = await self._generate(
-            model=model,
-            contents=_to_contents(messages),
-            config=self._config(system, tools, max_tokens, response_schema, tb),
-        )
-        return _to_response(resp)
+        user_texts = [m.content for m in messages if m.role == "user"]
+        with lf_generation("llm", model, input_={"system": system, "messages": user_texts}) as gen:
+            resp = await self._generate(
+                model=model,
+                contents=_to_contents(messages),
+                config=self._config(system, tools, max_tokens, response_schema, tb),
+            )
+            out = _to_response(resp)
+            gen.update(
+                output=out.text,
+                usage_details={
+                    "input": out.usage.input_tokens,
+                    "output": out.usage.output_tokens,
+                    "cache_read_input_tokens": out.usage.cached_tokens,
+                },
+                cost_details={"total": cost_usd(model, out.usage.input_tokens, out.usage.output_tokens)},
+                metadata={"retries": last_attempts()},
+            )
+            return out
 
     async def stream(self, *, model, system, messages, max_tokens=4096):
         cfg = self._config(system, None, max_tokens, None)
