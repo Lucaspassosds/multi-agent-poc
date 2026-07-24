@@ -88,7 +88,7 @@ async def answer_mcp(body: AgentIn):
         dispatch = make_dispatch(session)
         result = await run_agent(
             system=_SYSTEM, message=body.message, model=settings.model_resolve,
-            tools=tools, dispatch_fn=dispatch,
+            tools=tools, run_tool_fn=dispatch,
         )
         result["tools_source"] = "mcp"
         result["mcp_tools"] = [t.name for t in tools]

@@ -17,11 +17,12 @@ async def run_agent(
     message: str,
     model: str,
     tools: list[ToolSpec] = TOOL_SPECS,
-    dispatch_fn=dispatch,
+    run_tool_fn=dispatch,
     max_iters: int = 6,
 ) -> dict:
-    # dispatch_fn defaults to the in-process tools; the MCP path (spec 05) passes a
-    # dispatch that calls tools over the protocol instead — same loop either way.
+    # run_tool_fn defaults to the in-process tool runner (`dispatch`, renamed to `run_tool` in
+    # Phase C / spec 05); the MCP path passes a runner that calls tools over the protocol
+    # instead — same loop either way.
     provider = get_provider()
     messages: list[Message] = [user(message)]
     steps: list[dict] = []
@@ -48,7 +49,7 @@ async def run_agent(
             messages.append(assistant(resp.text or None, resp.tool_calls))
             for call in resp.tool_calls:
                 async with span(f"tool:{call.name}", "tool"):
-                    tool_output = await dispatch_fn(call.name, call.args)
+                    tool_output = await run_tool_fn(call.name, call.args)
                 steps.append({"type": "tool", "name": call.name, "args": call.args,
                               "result_preview": tool_output[:200]})
                 messages.append(tool_result(call, tool_output))
