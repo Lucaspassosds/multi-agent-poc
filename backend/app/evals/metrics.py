@@ -38,3 +38,30 @@ def citation_coverage(result: dict) -> float:
     reply = result["final_reply"].lower()
     hits = sum(1 for title in cited_titles if title.lower() in reply)
     return round(hits / len(cited_titles), 4)
+
+
+def classify_failures(case: dict, result: dict, verdict: dict,
+                       faithfulness_floor: float = 0.6) -> list[str]:
+    """Failure-taxonomy labels for one scored case (empty list = clean).
+
+    - hallucinated_policy: judge faithfulness below the floor (invented/unsupported policy)
+    - missed_citation:     retrieval missed a required KB title (retrieval_hit False)
+    - wrong_category:      predicted category != expected
+    - over_escalation:     escalated (priority high) when the case did not warrant it
+    - under_escalation:    did not escalate when the case warranted it
+    """
+    labels: list[str] = []
+    if verdict.get("faithfulness_score", 1.0) < faithfulness_floor:
+        labels.append("hallucinated_policy")
+    if not retrieval_hit(case, result):
+        labels.append("missed_citation")
+    cat_ok, _ = classification_match(case, result)
+    if not cat_ok:
+        labels.append("wrong_category")
+    expected_esc = case.get("expected_escalation", case["expected_priority"] == "high")
+    predicted_esc = result["classification"].get("priority") == "high"
+    if predicted_esc and not expected_esc:
+        labels.append("over_escalation")
+    if expected_esc and not predicted_esc:
+        labels.append("under_escalation")
+    return labels

@@ -1,0 +1,9 @@
+{
+  "retrieval_mode": "hybrid",
+  "classification_accuracy": 0.85,
+  "priority_accuracy": 0.75,
+  "retrieval_hit_rate": 0.85,
+  "citation_coverage": 0.6,
+  "faithfulness_avg": 0.8,
+  "helpfulness_avg": 0.8
+}

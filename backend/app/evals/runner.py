@@ -10,16 +10,19 @@ lexical/semantic-only retrieval to show a deliberate regression (spec's acceptan
 import asyncio
 import json
 import time
+from collections import Counter
 from pathlib import Path
 
+from app import langfuse_client
 from app.agents.orchestrator import triage
 from app.config import settings
 from app.db import get_pool
 from app.evals.judge import judge
-from app.evals.metrics import citation_coverage, classification_match, retrieval_hit
+from app.evals.metrics import citation_coverage, classification_match, classify_failures, retrieval_hit
 from app.observability import cost_usd, to_utc
 
 _GOLDEN_PATH = Path(__file__).parent / "golden.json"
+_BASELINE_PATH = Path(__file__).parent / "baseline.json"
 # Gemini free tier caps at 15 requests/MINUTE for this model, and a single triage() case alone
 # fires ~7-8 calls in a few seconds — running cases concurrently would only stack more bursts on
 # top of an already-saturated quota. Sequential + with_retry's RetryInfo-aware backoff (see
@@ -39,6 +42,19 @@ async def _run_case(case: dict, search_mode: str, sem: asyncio.Semaphore) -> dic
     category_correct, priority_correct = classification_match(case, result)
     judge_cost = cost_usd(settings.model_critic, judge_usage.input_tokens, judge_usage.output_tokens)
 
+    failure_labels = classify_failures(case, result, verdict)
+    lf_trace_id = result.get("langfuse_trace_id")
+    langfuse_client.score(lf_trace_id, "category_correct", 1.0 if category_correct else 0.0)
+    langfuse_client.score(lf_trace_id, "priority_correct", 1.0 if priority_correct else 0.0)
+    langfuse_client.score(lf_trace_id, "retrieval_hit", 1.0 if retrieval_hit(case, result) else 0.0)
+    langfuse_client.score(lf_trace_id, "citation_coverage", citation_coverage(result))
+    langfuse_client.score(lf_trace_id, "faithfulness", verdict["faithfulness_score"],
+                           comment=verdict["faithfulness_reasoning"])
+    langfuse_client.score(lf_trace_id, "helpfulness", verdict["helpfulness_score"],
+                           comment=verdict["helpfulness_reasoning"])
+    langfuse_client.score(lf_trace_id, "failure_taxonomy",
+                           ",".join(failure_labels) or "none")
+
     return {
         "golden_id": case["id"],
         "ticket": case["ticket"],
@@ -57,6 +73,7 @@ async def _run_case(case: dict, search_mode: str, sem: asyncio.Semaphore) -> dic
         "helpfulness_reasoning": verdict["helpfulness_reasoning"],
         "final_reply": result["final_reply"],
         "cost_usd": round(result.get("cost_usd", 0.0) + judge_cost, 6),
+        "failure_labels": failure_labels,
     }
 
 
@@ -78,12 +95,14 @@ async def _persist(retrieval_mode: str, started: float, ended: float,
             """INSERT INTO eval_runs (started_at, ended_at, retrieval_mode, n_cases,
                                        classification_accuracy, priority_accuracy,
                                        retrieval_hit_rate, citation_coverage,
-                                       faithfulness_avg, helpfulness_avg, total_cost_usd)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id""",
+                                       faithfulness_avg, helpfulness_avg, total_cost_usd,
+                                       failure_breakdown, regression)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",
             to_utc(started), to_utc(ended), retrieval_mode, aggregate["n_cases"],
             aggregate["classification_accuracy"], aggregate["priority_accuracy"],
             aggregate["retrieval_hit_rate"], aggregate["citation_coverage"],
             aggregate["faithfulness_avg"], aggregate["helpfulness_avg"], aggregate["total_cost_usd"],
+            json.dumps(aggregate["failure_breakdown"]), aggregate["regression"],
         )
         for c in per_case:
             await conn.execute(
@@ -92,14 +111,16 @@ async def _persist(retrieval_mode: str, started: float, ended: float,
                                             predicted_priority, expected_priority, priority_correct,
                                             retrieval_hit, citation_coverage,
                                             faithfulness_score, faithfulness_reasoning,
-                                            helpfulness_score, helpfulness_reasoning, final_reply)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)""",
+                                            helpfulness_score, helpfulness_reasoning, final_reply,
+                                            failure_labels)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)""",
                 run_id, c["golden_id"], c["ticket"], c["trace_id"],
                 c["predicted_category"], c["expected_category"], c["category_correct"],
                 c["predicted_priority"], c["expected_priority"], c["priority_correct"],
                 c["retrieval_hit"], c["citation_coverage"],
                 c["faithfulness_score"], c["faithfulness_reasoning"],
                 c["helpfulness_score"], c["helpfulness_reasoning"], c["final_reply"],
+                json.dumps(c["failure_labels"]),
             )
     return run_id
 
@@ -122,6 +143,20 @@ async def run_eval(retrieval_mode: str = "hybrid") -> dict:
         "helpfulness_avg": _avg(per_case, "helpfulness_score"),
         "total_cost_usd": round(sum(c["cost_usd"] for c in per_case), 6),
     }
+
+    counts: Counter = Counter()
+    for c in per_case:
+        for lbl in c["failure_labels"]:
+            counts[lbl] += 1
+    aggregate["failure_breakdown"] = dict(counts)
+
+    baseline = json.loads(_BASELINE_PATH.read_text()) if _BASELINE_PATH.exists() else {}
+    tol = settings.regression_tolerance
+    gated = [m for m in ("classification_accuracy", "retrieval_hit_rate", "citation_coverage",
+                          "faithfulness_avg", "helpfulness_avg")
+             if m in baseline and aggregate[m] < baseline[m] - tol]
+    aggregate["regression"] = bool(gated)
+    aggregate["regression_detail"] = {m: {"baseline": baseline[m], "current": aggregate[m]} for m in gated}
 
     run_id = await _persist(retrieval_mode, started, ended, per_case, aggregate)
 

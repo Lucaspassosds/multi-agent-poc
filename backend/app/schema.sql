@@ -143,3 +143,9 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignee TEXT;   -- queue/agent han
 -- Phase D: link each Postgres trace to its mirrored Langfuse trace (deep-link + score target).
 ALTER TABLE traces ADD COLUMN IF NOT EXISTS langfuse_trace_id TEXT;
 ALTER TABLE traces ADD COLUMN IF NOT EXISTS langfuse_url      TEXT;
+
+-- Phase D evals depth: failure taxonomy per case + regression gate per run.
+ALTER TABLE eval_cases ADD COLUMN IF NOT EXISTS failure_labels    JSONB;
+ALTER TABLE eval_runs  ADD COLUMN IF NOT EXISTS failure_breakdown JSONB;
+ALTER TABLE eval_runs  ADD COLUMN IF NOT EXISTS regression        BOOLEAN;
+ALTER TABLE eval_runs  ADD COLUMN IF NOT EXISTS baseline_run_id   BIGINT;
