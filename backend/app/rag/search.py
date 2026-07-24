@@ -70,3 +70,14 @@ async def hybrid_search(query: str, k: int = 10, rrf_k: int = 60, candidate_pool
 
     top = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:k]
     return [{**meta[cid], "score": round(scores[cid], 6)} for cid in top]
+
+
+# The single source of truth for retrieval-mode dispatch, shared by the HTTP /search endpoint
+# (main.py) and the retriever subagents (orchestrator.py). A new mode is added in exactly one
+# place. Defaulting a retriever to "lexical"/"semantic" lets the Phase 7 evals demonstrate a
+# deliberate regression (hybrid is strictly better) without duplicating the orchestrator flow.
+SEARCH_FNS = {
+    "lexical": lexical_search,
+    "semantic": semantic_search,
+    "hybrid": hybrid_search,
+}

@@ -115,10 +115,6 @@ async def search(
     mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
     k: int = Query(5, ge=1, le=25),
 ):
-    fn = {
-        "lexical": search_mod.lexical_search,
-        "semantic": search_mod.semantic_search,
-        "hybrid": search_mod.hybrid_search,
-    }[mode]
+    fn = search_mod.SEARCH_FNS[mode]
     rows = await fn(q, k)
     return {"mode": mode, "query": q, "results": _trim(rows)}

@@ -25,15 +25,6 @@ from app.observability import Trace, span
 from app.rag import search as search_mod
 from app.skills import load_skill
 
-# Retrieval mode dispatch — same dict-dispatch pattern as main.py's /search. Defaulting a
-# retriever to "lexical" or "semantic" lets Phase 7 evals demonstrate a deliberate regression
-# (hybrid is strictly better) without duplicating the orchestrator flow.
-_SEARCH_FNS = {
-    "lexical": search_mod.lexical_search,
-    "semantic": search_mod.semantic_search,
-    "hybrid": search_mod.hybrid_search,
-}
-
 
 class Classification(BaseModel):
     category: str
@@ -116,7 +107,7 @@ async def _retrieve(subquestion: str, search_mode: str = "hybrid"):
     """A retriever subagent: search (hybrid by default), then summarize into a compact, cited evidence note."""
     async with span("retriever", "subagent", model=settings.model_classify) as s:
         t0 = time.time()
-        rows = await _SEARCH_FNS[search_mode](subquestion, k=4)
+        rows = await search_mod.SEARCH_FNS[search_mode](subquestion, k=4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
         summary, usage = await _complete_text(
             settings.model_classify,
