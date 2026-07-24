@@ -18,6 +18,7 @@ from app.api.tickets import router as tickets_router
 from app.api.traces import router as traces_router
 from app.config import settings
 from app.db import close_pool, get_pool, init_schema
+from app import langfuse_client
 from app.rag import search as search_mod
 from app.rag.ingest import ingest_all
 
@@ -27,7 +28,9 @@ async def lifespan(app: FastAPI):
     # Ensure the schema exists, then warm the connection pool (with the pgvector codec).
     await init_schema()
     await get_pool()
+    langfuse_client.init()          # auth-check once; stays disabled on failure
     yield
+    langfuse_client.flush()         # drain any buffered events before shutdown
     await close_pool()
 
 

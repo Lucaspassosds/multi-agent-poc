@@ -22,4 +22,6 @@ dependencies = [
     "mcp>=1.2",
     # Phase 5/6 — Skills: real YAML frontmatter parsing
     "pyyaml>=6",
+    # Phase D — observability: Langfuse Cloud SDK
+    "langfuse>=3,<4",
 ]

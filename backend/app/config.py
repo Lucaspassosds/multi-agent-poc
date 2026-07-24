@@ -36,5 +36,19 @@ class Settings(BaseSettings):
     }
     default_model_cost: tuple[float, float] = (0.10, 0.40)  # fallback for an unlisted model id
 
+    # --- Langfuse (Phase D observability, augmentative) ---
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
+    langfuse_dashboard_url: str = ""      # a shared Langfuse dashboard URL the Phase-E UI can iframe
+
+    # --- Phase D depth knobs ---
+    max_revisions: int = 2                # bounded revise loop cap (critique node)
+    rerank_enabled: bool = True           # LLM-rerank over the fused top-k
+    chaos_inject_429: int = 0             # default synthetic-429 injections per LLM call (0 = off)
+    cost_budget_usd: float = 0.05         # per-run cost breach threshold (list-price proxy)
+    latency_budget_ms: int = 60000        # per-run latency breach threshold
+    regression_tolerance: float = 0.05    # allowed metric drop vs baseline before the gate fails
+
 
 settings = Settings()
