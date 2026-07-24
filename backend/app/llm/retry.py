@@ -1,4 +1,4 @@
-"""Retry with exponential backoff + jitter (topic: "resolver retry").
+"""Retry with exponential backoff + jitter.
 
 Two failure classes:
 - transient (429 rate-limit, 5xx, timeouts, connection drops) -> retry with growing delay

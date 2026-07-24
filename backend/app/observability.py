@@ -1,4 +1,4 @@
-"""Phase 6 — a minimal, framework-free span tracer (topic: "observabilidade").
+"""Phase 6 — a minimal, framework-free span tracer.
 
 One `Trace` = one call to triage()/run_agent(). Nested `span(...)` calls attach as children via
 contextvars, so instrumented code never threads a parent id by hand — and because each

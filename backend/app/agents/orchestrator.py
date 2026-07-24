@@ -4,7 +4,7 @@ Flow:  classify ∥ plan  →  retrieve×N (parallel)  →  resolve  →  critiq
 
 Key ideas demonstrated:
 - Subagents with ISOLATED context: each helper is a fresh, small LLM call ([user(msg)] only) that
-  returns a COMPACT result — the orchestrator never accumulates a giant transcript (gestão de contexto).
+  returns a COMPACT result — the orchestrator never accumulates a giant transcript (subagent context isolation).
 - Parallelism: the retriever subagents run concurrently via asyncio.gather; we log parallel-vs-sequential
   wall-clock to prove the speedup.
 - Each subagent uses a model tier matched to its job (all flash-lite on Gemini free tier; the

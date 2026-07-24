@@ -1,9 +1,10 @@
-"""Deterministic evals metrics (topic: "evals") — cheap, objective, no model call involved.
+"""Deterministic evals metrics — cheap, objective, no model call involved.
 
 Each operates on one golden-set case (`golden.json`) + the corresponding `orchestrator.triage()`
 result dict. The LLM-as-judge (judge.py) covers what these can't: whether the *reply itself* is
 grounded and helpful, not just whether the pipeline picked the right label/sources.
 """
+# ── Concept: EVALS (deterministic metrics) ── cheap, objective, model-free scores over each golden-set case.
 
 
 def classification_match(case: dict, result: dict) -> tuple[bool, bool]:

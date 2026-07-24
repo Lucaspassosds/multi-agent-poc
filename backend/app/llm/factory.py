@@ -1,4 +1,5 @@
 """Provider factory — picks the implementation from LLM_PROVIDER (one place to swap)."""
+# ── Concept: PROVIDER SWAP (Claude/Gemini API) ── LLM_PROVIDER selects the implementation; agent code speaks neutral llm/base types only.
 from functools import lru_cache
 
 from app.config import settings

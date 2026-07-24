@@ -1,7 +1,8 @@
-"""LLM-as-judge (topic: "evals") — scores what deterministic metrics can't: whether the reply is
+"""LLM-as-judge — scores what deterministic metrics can't: whether the reply is
 actually grounded in evidence and whether it resolves the ticket. One structured call per case
 (both dimensions together, not two separate calls) to conserve free-tier quota.
 """
+# ── Concept: EVALS (LLM-as-judge) ── one structured call scores faithfulness + helpfulness the metrics can't measure.
 import json
 
 from pydantic import BaseModel

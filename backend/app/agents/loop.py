@@ -1,4 +1,4 @@
-"""The hand-rolled tool-use loop (topic: "orquestração sem framework").
+"""The hand-rolled tool-use loop.
 
 No LangChain/CrewAI — just: call the model, if it asked for tools run them, feed the
 results back, repeat until it produces a final answer (or we hit the iteration cap).
