@@ -31,19 +31,23 @@ async def answer(body: AgentIn):
 async def triage_endpoint(
     body: AgentIn, skill: bool = Query(True),
     search_mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
+    chaos: int = Query(0, ge=0, le=5),
 ):
     """Full multi-agent pipeline: classify → retrieve (parallel) → resolve → critique → final.
 
     `skill=false` disables the policy-reply-formatter skill (to show its effect). `search_mode`
-    forces the retrievers onto lexical/semantic-only search (Phase 7's regression demo)."""
+    forces the retrievers onto lexical/semantic-only search (Phase 7's regression demo).
+    `chaos=N` forces the next N LLM calls to fail with a synthetic, retryable error so backoff
+    is visible in the trace on demand."""
     return await triage(body.message, use_skill=skill, search_mode=search_mode,
-                        session_id=body.session_id)
+                        session_id=body.session_id, chaos=chaos)
 
 
 @router.post("/triage/stream")
 async def triage_stream_endpoint(
     body: AgentIn, skill: bool = Query(True),
     search_mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
+    chaos: int = Query(0, ge=0, le=5),
 ):
     """Same pipeline as `/agent/triage`, streamed live over SSE (Phase 8): a `step_start`/
     `step_done` event per phase (classify, plan, retrieve×N, resolve, critique, revise) as it
@@ -57,7 +61,7 @@ async def triage_stream_endpoint(
         errored = False
         try:
             async for event in triage_events(body.message, use_skill=skill, search_mode=search_mode,
-                                             session_id=body.session_id):
+                                             session_id=body.session_id, chaos=chaos):
                 if event.get("type") == "final":
                     final_result = event.get("result")
                 yield f"data: {json.dumps(event, default=str)}\n\n"

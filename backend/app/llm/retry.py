@@ -15,7 +15,7 @@ import re
 from google.genai import errors as genai_errors
 
 _RETRYABLE_CODES = {408, 409, 429, 500, 502, 503, 504}
-_RETRYABLE_EXC_NAMES = {"ConnectError", "ReadTimeout", "ConnectTimeout", "RemoteProtocolError", "TimeoutException"}
+_RETRYABLE_EXC_NAMES = {"ConnectError", "ReadTimeout", "ConnectTimeout", "RemoteProtocolError", "TimeoutException", "ChaosError"}
 _RETRY_DELAY_RE = re.compile(r"([\d.]+)")
 
 # How many retries the most recently completed with_retry() call needed (0 = succeeded first try).
@@ -26,6 +26,20 @@ _last_attempts: contextvars.ContextVar[int] = contextvars.ContextVar("last_attem
 
 def last_attempts() -> int:
     return _last_attempts.get()
+
+
+class ChaosError(Exception):
+    """Synthetic transient failure injected by the chaos-toggle to exercise backoff on demand."""
+
+
+# How many of the next with_retry()-wrapped attempts should raise a synthetic ChaosError before
+# the real call runs. Set via set_chaos() at the top of a request so every subagent task
+# (asyncio.create_task/gather copies the contextvars context) independently demos backoff.
+_chaos_remaining: contextvars.ContextVar[int] = contextvars.ContextVar("chaos_remaining", default=0)
+
+
+def set_chaos(n: int) -> None:
+    _chaos_remaining.set(n)
 
 
 def is_transient(exc: Exception) -> bool:
@@ -59,6 +73,10 @@ def with_retry(max_attempts: int = 6, base_delay: float = 0.5, max_delay: float 
             attempt = 0
             while True:
                 try:
+                    remaining = _chaos_remaining.get()
+                    if remaining > 0:
+                        _chaos_remaining.set(remaining - 1)
+                        raise ChaosError(f"injected 429 (chaos), {remaining} left")
                     result = await fn(*args, **kwargs)
                     _last_attempts.set(attempt)
                     return result
