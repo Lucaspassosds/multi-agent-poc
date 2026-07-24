@@ -1,5 +1,5 @@
 import { CheckCircle, PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useReducer, useRef, useState } from 'react'
 import ClassificationChips from '../components/ClassificationChips'
 import CitationBadge from '../components/CitationBadge'
 import HowItWorks from '../components/HowItWorks'
@@ -37,12 +37,73 @@ const STEP_DISPLAY_LABEL: Record<string, string> = {
   revise: 'Resolve (revision)',
 }
 
-function upsertRow(rows: WaterfallRow[], row: WaterfallRow): WaterfallRow[] {
+// --- Grouped run state (deferred Phase-B cleanup): one reducer instead of six useState. ---
+interface RunState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  rows: WaterfallRow[]
+  result: TriageResult | null
+  classification: Classification | null
+  error: string | null
+  viewingId: number | null // non-null while revisiting a past ticket
+}
+
+const IDLE: RunState = {
+  status: 'idle',
+  rows: [],
+  result: null,
+  classification: null,
+  error: null,
+  viewingId: null,
+}
+
+type RunAction =
+  | { type: 'reset' }
+  | { type: 'start' }
+  | { type: 'upsertRow'; row: WaterfallRow }
+  | { type: 'classification'; value: Classification }
+  | { type: 'result'; value: TriageResult }
+  | { type: 'error'; message: string }
+  | { type: 'finish' }
+  | { type: 'viewStart'; id: number }
+  | { type: 'viewLoaded'; result: TriageResult; rows: WaterfallRow[] }
+
+function upsert(rows: WaterfallRow[], row: WaterfallRow): WaterfallRow[] {
   const idx = rows.findIndex((r) => r.id === row.id)
   if (idx === -1) return [...rows, row]
   const next = [...rows]
   next[idx] = { ...next[idx], ...row }
   return next
+}
+
+function runReducer(state: RunState, action: RunAction): RunState {
+  switch (action.type) {
+    case 'reset':
+      return IDLE
+    case 'start':
+      return { ...IDLE, status: 'running' }
+    case 'upsertRow':
+      return { ...state, rows: upsert(state.rows, action.row) }
+    case 'classification':
+      return { ...state, classification: action.value }
+    case 'result':
+      return { ...state, result: action.value }
+    case 'error':
+      return { ...state, status: 'error', error: action.message }
+    case 'finish':
+      return state.status === 'error' ? state : { ...state, status: 'done' }
+    case 'viewStart':
+      return { ...IDLE, viewingId: action.id }
+    case 'viewLoaded':
+      return {
+        ...state,
+        status: 'done',
+        result: action.result,
+        classification: action.result.classification,
+        rows: action.rows,
+      }
+    default:
+      return state
+  }
 }
 
 function renderReplyWithCitations(text: string, cited: CitedChunk[]) {
@@ -58,13 +119,9 @@ function renderReplyWithCitations(text: string, cited: CitedChunk[]) {
 
 export default function TriagePage() {
   const [message, setMessage] = useState('')
-  const [running, setRunning] = useState(false)
-  const [rows, setRows] = useState<WaterfallRow[]>([])
-  const [result, setResult] = useState<TriageResult | null>(null)
-  const [classification, setClassification] = useState<Classification | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [tickets, setTickets] = useState<TicketListItem[]>([])
-  const [viewingId, setViewingId] = useState<number | null>(null)
+  const [state, dispatch] = useReducer(runReducer, IDLE)
+  const running = state.status === 'running'
   const startedAt = useRef(0)
   const rowStart = useRef<Map<string, number>>(new Map())
   const sessionId = useRef<string>(getOrCreateSessionId())
@@ -83,43 +140,40 @@ export default function TriagePage() {
   }, [])
 
   function newTicket() {
-    setViewingId(null)
     setMessage('')
-    setRows([])
-    setResult(null)
-    setClassification(null)
-    setError(null)
+    dispatch({ type: 'reset' })
   }
 
   async function selectTicket(id: number) {
     if (running) return
-    setViewingId(id)
-    setError(null)
-    setRows([])
-    setResult(null)
-    setClassification(null)
+    dispatch({ type: 'viewStart', id })
     try {
       const res = await getTicket(id)
-      setResult(res)
-      setClassification(res.classification)
+      let rows: WaterfallRow[] = []
       if (res.trace_id) {
         const trace = await getTrace(res.trace_id)
-        setRows(triageRestoreRows(trace, res.evidence))
+        rows = triageRestoreRows(trace, res.evidence)
       }
+      dispatch({ type: 'viewLoaded', result: res, rows })
     } catch (e) {
-      setError(String(e))
+      dispatch({ type: 'error', message: String(e) })
     }
   }
 
   async function submit(msg: string) {
-    setRunning(true)
-    setViewingId(null)
-    setRows([])
-    setResult(null)
-    setClassification(null)
-    setError(null)
+    dispatch({ type: 'start' })
     startedAt.current = performance.now()
     rowStart.current = new Map()
+    // Deviation from the plan's target code (flagged, not silent — see task-4-report.md):
+    // TriageStepDoneEvent has no `subquestion` field, so recomputing the retrieve row's label
+    // from `event.index` alone at step_done would regress the visible label from
+    // "Retrieve — <subquestion text>" (set at step_start) to a bare "Retrieve — #N" the moment
+    // the row finishes — a guaranteed-every-run visual change, since the backend always sends
+    // `subquestion` on step_start (see orchestrator.py `_retrieve_emit`). This local map
+    // remembers each retrieve row's step_start label so step_done can reuse it verbatim,
+    // preserving today's behavior exactly — the same pattern `rowStart` already uses to track
+    // per-row timing outside React state.
+    const retrieveLabels = new Map<string, string>()
 
     const elapsed = () => (performance.now() - startedAt.current) / 1000
     let gotFinal = false
@@ -131,40 +185,49 @@ export default function TriagePage() {
           const label = event.step === 'retrieve'
             ? `Retrieve — ${event.subquestion ?? `#${event.index}`}`
             : STEP_DISPLAY_LABEL[event.step]
+          if (event.step === 'retrieve') retrieveLabels.set(id, label)
           rowStart.current.set(id, elapsed())
-          setRows((prev) => upsertRow(prev, {
-            id,
-            label,
-            seriesKey: seriesKeyForName(event.step === 'retrieve' ? 'retriever' : STEP_SERIES_NAME[event.step]),
-            status: 'running',
-            depth: event.step === 'retrieve' ? 1 : 0,
-            startOffset: elapsed(),
-            duration: null,
-          }))
+          dispatch({
+            type: 'upsertRow',
+            row: {
+              id,
+              label,
+              seriesKey: seriesKeyForName(event.step === 'retrieve' ? 'retriever' : STEP_SERIES_NAME[event.step]),
+              status: 'running',
+              depth: event.step === 'retrieve' ? 1 : 0,
+              startOffset: elapsed(),
+              duration: null,
+            },
+          })
         } else if (event.type === 'step_done') {
           const id = event.step === 'retrieve' ? `retrieve-${event.index}` : event.step
           const start = rowStart.current.get(id) ?? elapsed()
-          setRows((prev) => upsertRow(prev, {
-            id,
-            label: prev.find((r) => r.id === id)?.label ?? STEP_DISPLAY_LABEL[event.step] ?? event.step,
-            seriesKey: prev.find((r) => r.id === id)?.seriesKey ?? seriesKeyForName(STEP_SERIES_NAME[event.step] ?? event.step),
-            status: 'ok',
-            depth: event.step === 'retrieve' ? 1 : 0,
-            startOffset: start,
-            duration: elapsed() - start,
-          }))
-          if (event.step === 'classify') setClassification(event.data as Classification)
+          dispatch({
+            type: 'upsertRow',
+            row: {
+              id,
+              label: event.step === 'retrieve'
+                ? (retrieveLabels.get(id) ?? `Retrieve — #${event.index}`)
+                : STEP_DISPLAY_LABEL[event.step] ?? event.step,
+              seriesKey: seriesKeyForName(event.step === 'retrieve' ? 'retriever' : STEP_SERIES_NAME[event.step] ?? event.step),
+              status: 'ok',
+              depth: event.step === 'retrieve' ? 1 : 0,
+              startOffset: start,
+              duration: elapsed() - start,
+            },
+          })
+          if (event.step === 'classify') dispatch({ type: 'classification', value: event.data as Classification })
         } else if (event.type === 'final') {
-          setResult(event.result)
+          dispatch({ type: 'result', value: event.result })
           gotFinal = true
         } else if (event.type === 'error') {
-          setError(event.message)
+          dispatch({ type: 'error', message: event.message })
         }
       }
     } catch (e) {
-      setError(String(e))
+      dispatch({ type: 'error', message: String(e) })
     } finally {
-      setRunning(false)
+      dispatch({ type: 'finish' })
     }
 
     // Clear the composer only on a clean run; keep the text on error so the user can retry.
@@ -173,6 +236,8 @@ export default function TriagePage() {
       void refreshTickets()
     }
   }
+
+  const { rows, result, classification, error, viewingId } = state
 
   return (
     <div className="flex gap-6">
