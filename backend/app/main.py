@@ -11,6 +11,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.agent import router as agent_router
+from app.api.escalations import router as escalations_router
 from app.api.evals import router as evals_router
 from app.api.llm import router as llm_router
 from app.api.tickets import router as tickets_router
@@ -53,6 +54,7 @@ app.include_router(agent_router)
 app.include_router(traces_router)
 app.include_router(tickets_router)
 app.include_router(evals_router)
+app.include_router(escalations_router)
 
 
 async def _check_db() -> bool:

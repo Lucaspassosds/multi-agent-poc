@@ -119,3 +119,23 @@ CREATE TABLE IF NOT EXISTS eval_cases (
 );
 
 CREATE INDEX IF NOT EXISTS eval_cases_run_idx ON eval_cases (run_id);
+
+-- Phase C schema: human-in-the-loop escalation approvals. The escalate TOOL writes NOTHING;
+-- a row appears here ONLY when a human approves (or rejects) a proposal via the API. Runs
+-- idempotently on startup like the tables above.
+CREATE TABLE IF NOT EXISTS escalations (
+    id          BIGSERIAL   PRIMARY KEY,
+    handle      TEXT        UNIQUE NOT NULL,        -- proposal handle from the escalate tool (ESC-xxxx)
+    ticket_ref  TEXT,                                -- external ticket id / free-text ref, if any
+    ticket_id   BIGINT      REFERENCES tickets(id) ON DELETE SET NULL,  -- links to a saved run, if any
+    reason      TEXT        NOT NULL,
+    severity    TEXT        NOT NULL,                -- low | medium | high
+    status      TEXT        NOT NULL,                -- approved | rejected
+    assignee    TEXT,                                -- queue/agent handle set at approval
+    decided_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS escalations_status_idx ON escalations (status, decided_at DESC);
+
+-- The ticket-status write half of the gate: applied to a saved ticket when an escalation is approved.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS status   TEXT;   -- e.g. 'escalated'
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignee TEXT;   -- queue/agent handle

@@ -322,7 +322,7 @@ async def run_skill_script_tool(*, name: str, script: str,
 async def escalate(*, ticket_ref: str | None = None, reason: str,
                    severity: str = "medium") -> EscalateResult:
     """PROPOSE an escalation. Writes NOTHING — the gate. The write commits only
-    when a human approves via POST /agent/escalations (see api_escalations.py)."""
+    when a human approves via POST /agent/escalations (see app/api/escalations.py)."""
     handle = "ESC-" + uuid.uuid4().hex[:8]
     return EscalateResult(handle=handle, status="proposed", committed=False,
                           ticket_ref=ticket_ref, reason=reason, severity=severity)
