@@ -1,4 +1,15 @@
-import type { EvalRun, RetrievalMode, TicketListItem, TraceDetail, TraceListItem, TriageResult } from './types'
+import type {
+  EscalationHandle,
+  EvalRun,
+  KbDocResource,
+  KbIndexEntry,
+  McpPrompt,
+  RetrievalMode,
+  TicketListItem,
+  TraceDetail,
+  TraceListItem,
+  TriageResult,
+} from './types'
 
 export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
@@ -48,4 +59,22 @@ export function runEvals(retrievalMode: RetrievalMode): Promise<EvalRun> {
 
 export function ingest(fetchDocs: boolean, reset: boolean): Promise<unknown> {
   return postJSON(`/ingest?fetch=${fetchDocs}&reset=${reset}`)
+}
+
+// --- Phase E: gated escalate (spec 05). Called ONLY on human approval. ---
+export function approveEscalation(ticketId: number, reason: string): Promise<EscalationHandle> {
+  return postJSON('/agent/escalate/approve', { ticket_id: ticketId, reason })
+}
+
+// --- Phase E: MCP resources/prompts over the Phase-C HTTP passthrough (spec 03). ---
+export function getKbIndex(): Promise<{ resources: KbIndexEntry[] }> {
+  return getJSON('/mcp/kb')
+}
+
+export function getKbDoc(id: number): Promise<KbDocResource> {
+  return getJSON(`/mcp/kb/${id}`)
+}
+
+export function getMcpPrompts(): Promise<{ prompts: McpPrompt[] }> {
+  return getJSON('/mcp/prompts')
 }

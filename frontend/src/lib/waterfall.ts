@@ -72,6 +72,7 @@ export function spanTreeToRows(trace: TraceDetail): WaterfallRow[] {
         outputTokens: s.output_tokens,
         cacheReadTokens: s.cache_read_tokens,
         retries: s.retries,
+        cost: s.cost_usd,
         error: s.error,
       })
       walk(s.children, depth + 1)
@@ -131,6 +132,7 @@ export function triageRestoreRows(trace: TraceDetail, evidence: Evidence[]): Wat
       outputTokens: s.output_tokens,
       cacheReadTokens: s.cache_read_tokens,
       retries: s.retries,
+      cost: s.cost_usd,
       error: s.error,
     }
   })
