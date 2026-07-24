@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app import langfuse_client
 from app.config import settings
 from app.llm.base import user
 from app.llm.factory import get_provider
@@ -26,12 +27,15 @@ class ChatIn(BaseModel):
 @router.post("/chat")
 async def chat(body: ChatIn):
     provider = get_provider()
-    resp = await provider.complete(
-        model=settings.model_resolve,
-        system="You are a concise support assistant.",
-        messages=[user(body.message)],
-        max_tokens=512,
-    )
+    try:
+        resp = await provider.complete(
+            model=settings.model_resolve,
+            system="You are a concise support assistant.",
+            messages=[user(body.message)],
+            max_tokens=512,
+        )
+    finally:
+        langfuse_client.flush()
     return {"text": resp.text, "usage": resp.usage.__dict__, "finish_reason": resp.finish_reason}
 
 
@@ -90,14 +94,17 @@ async def cache_demo():
     """Two identical large-prefix calls; the second should report cached tokens > 0."""
     provider = get_provider()
     out = []
-    for _ in range(2):
-        resp = await provider.complete(
-            model=settings.model_resolve,
-            system=_BIG_CONTEXT,
-            messages=[user("In one sentence, when does a refund arrive?")],
-            max_tokens=64,
-        )
-        out.append(resp.usage.__dict__)
+    try:
+        for _ in range(2):
+            resp = await provider.complete(
+                model=settings.model_resolve,
+                system=_BIG_CONTEXT,
+                messages=[user("In one sentence, when does a refund arrive?")],
+                max_tokens=64,
+            )
+            out.append(resp.usage.__dict__)
+    finally:
+        langfuse_client.flush()
     hit = out[1]["cached_tokens"] > 0
     prefix_ok = _VOLATILE_RE.search(_BIG_CONTEXT) is None
     return {
@@ -127,13 +134,16 @@ class TicketClass(BaseModel):
 async def classify_demo(body: ChatIn):
     """Structured output: the model is constrained to the TicketClass schema (valid JSON)."""
     provider = get_provider()
-    resp = await provider.complete(
-        model=settings.model_classify,
-        system="Classify the support ticket. category in {billing,refund,subscription,payment_failure,dispute,other}; "
-               "priority in {low,medium,high}; sentiment in {angry,neutral,happy}.",
-        messages=[user(body.message)],
-        max_tokens=200,
-        response_schema=TicketClass,
-    )
+    try:
+        resp = await provider.complete(
+            model=settings.model_classify,
+            system="Classify the support ticket. category in {billing,refund,subscription,payment_failure,dispute,other}; "
+                   "priority in {low,medium,high}; sentiment in {angry,neutral,happy}.",
+            messages=[user(body.message)],
+            max_tokens=200,
+            response_schema=TicketClass,
+        )
+    finally:
+        langfuse_client.flush()
     return {"raw_json": resp.text, "parsed": json.loads(resp.text) if resp.text else None,
             "usage": resp.usage.__dict__}
