@@ -17,6 +17,10 @@ export default function EscalationGate({
 }) {
   const reason = proposal?.reason ?? 'Manual escalation requested by agent operator.'
   const preview = proposal?.preview ?? `Escalate ticket #${ticketId}: "${ticketText.slice(0, 80)}…"`
+  // The `escalate` tool mints the handle ("ESC-<hex8>") when it proposes; if a proposal reaches us
+  // without one, compose a deterministic per-ticket handle so a double-approve is rejected by the
+  // endpoint's unique-handle guard (409) instead of inserting a second escalation for one ticket.
+  const handleId = proposal?.handle ?? `ESC-ticket-${ticketId}`
   const [busy, setBusy] = useState(false)
   const [handle, setHandle] = useState<EscalationHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -25,7 +29,15 @@ export default function EscalationGate({
     setBusy(true)
     setError(null)
     try {
-      setHandle(await approveEscalation(ticketId, reason))
+      setHandle(
+        await approveEscalation({
+          handle: handleId,
+          reason,
+          severity: proposal?.severity,
+          ticketId,
+          ticketRef: proposal?.ticket_ref,
+        }),
+      )
     } catch (e) {
       setError(String(e))
     } finally {
@@ -41,8 +53,10 @@ export default function EscalationGate({
           Escalated · handle {handle.handle}
         </p>
         <p className="mt-1 text-xs text-mutedForeground">
-          Ticket status is now <span className="font-medium text-foreground">{handle.status}</span>.
-          Committed {new Date(handle.committed_at).toLocaleString()}.
+          Escalation is now <span className="font-medium text-foreground">{handle.status}</span>
+          {handle.assignee && <> · assigned to <span className="font-medium text-foreground">{handle.assignee}</span></>}
+          {handle.ticket_id != null && <> · ticket #{handle.ticket_id} set to escalated</>}. Decided{' '}
+          {new Date(handle.decided_at).toLocaleString()}.
         </p>
       </Card>
     )

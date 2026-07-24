@@ -17,7 +17,14 @@ export default function ReplyCard({
   const [draft, setDraft] = useState(result.final_reply)
   const [sent, setSent] = useState(false)
   const [gateOpen, setGateOpen] = useState(false)
-  const escalationRecommended = result.escalation?.proposed === true
+  // The gate is only offered when the pipeline actually proposed an escalation AND the proposal
+  // carries the `tickets` row id the write needs. A trace id is NOT a ticket id — approving with
+  // one would either 422 or, worse, flip an unrelated ticket to 'escalated'. When the field is
+  // absent (today's triage result never carries a proposal) the button hides, same graceful
+  // degradation every other optional-field consumer uses.
+  const escalationTicketId = result.escalation?.ticket_id
+  const canEscalate =
+    result.escalation?.proposed === true && typeof escalationTicketId === 'number'
 
   return (
     <section className="space-y-3">
@@ -77,25 +84,23 @@ export default function ReplyCard({
             <PencilSimple size={14} weight="regular" />
             {editing ? 'Done editing' : 'Edit'}
           </button>
-          <button
-            type="button"
-            onClick={() => setGateOpen(true)}
-            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs ${
-              escalationRecommended
-                ? 'border-warning/60 text-warning'
-                : 'border-border text-foreground hover:border-accent/50'
-            }`}
-          >
-            <ShieldWarning size={14} weight="regular" />
-            {escalationRecommended ? 'Escalate (recommended)' : 'Escalate'}
-          </button>
+          {canEscalate && (
+            <button
+              type="button"
+              onClick={() => setGateOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-warning/60 px-3 py-1.5 text-xs text-warning"
+            >
+              <ShieldWarning size={14} weight="regular" />
+              Escalate (recommended)
+            </button>
+          )}
         </div>
       </div>
 
-      {gateOpen && (
+      {gateOpen && canEscalate && escalationTicketId != null && (
         <EscalationGate
           proposal={result.escalation ?? null}
-          ticketId={result.escalation?.ticket_id ?? result.trace_id}
+          ticketId={escalationTicketId}
           ticketText={result.ticket}
           onClose={() => setGateOpen(false)}
         />

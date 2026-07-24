@@ -7,7 +7,7 @@ import Badge from '../components/Badge'
 import CitationBadge from '../components/CitationBadge'
 import { useViewMode } from '../lib/viewMode'
 import { getEvals, runEvals } from '../lib/api'
-import type { EvalRun, RetrievalMode } from '../lib/types'
+import type { EvalBaseline, EvalRun, RetrievalMode } from '../lib/types'
 
 const METRICS: Array<{ key: keyof EvalRun; label: string }> = [
   { key: 'classification_accuracy', label: 'Classification accuracy' },
@@ -147,21 +147,26 @@ export default function EvalsPage() {
               </span>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {METRICS.map((m) => (
-                <div key={m.key}>
-                  <MetricBar label={m.label} value={run[m.key] as number} />
-                  {run.baseline && (
-                    <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
-                      baseline: {(run.baseline[m.key as keyof typeof run.baseline] as number).toFixed(2)}
-                    </p>
-                  )}
-                  {!run.baseline && previousRun && previousRun.retrieval_mode !== run.retrieval_mode && (
-                    <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
-                      vs {previousRun.retrieval_mode}: {(previousRun[m.key] as number).toFixed(2)}
-                    </p>
-                  )}
-                </div>
-              ))}
+              {METRICS.map((m) => {
+                // `baseline` is partial by construction (only gate-failing metrics carry one), so
+                // guard the metric actually read — not just the container.
+                const baselineValue = run.baseline?.[m.key as keyof EvalBaseline]
+                return (
+                  <div key={m.key}>
+                    <MetricBar label={m.label} value={run[m.key] as number} />
+                    {baselineValue != null && (
+                      <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
+                        baseline: {baselineValue.toFixed(2)}
+                      </p>
+                    )}
+                    {baselineValue == null && previousRun && previousRun.retrieval_mode !== run.retrieval_mode && (
+                      <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
+                        vs {previousRun.retrieval_mode}: {(previousRun[m.key] as number).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </section>
 

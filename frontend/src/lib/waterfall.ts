@@ -141,7 +141,10 @@ export function triageRestoreRows(trace: TraceDetail, evidence: Evidence[]): Wat
 export interface RoleCost {
   seriesKey: SeriesKey
   label: string
-  cost: number
+  /** null when NO span in this role reported a cost. GET /traces/{id} does not serialize per-span
+   * cost today (see SpanNode.cost_usd), so this is normally null for every role — callers must
+   * render it as "unavailable" and must not print $0.000000, which would be confidently wrong. */
+  cost: number | null
   tokens: number
 }
 
@@ -151,8 +154,8 @@ export function perRoleCost(trace: TraceDetail): RoleCost[] {
   function walk(spans: SpanNode[]) {
     for (const s of spans) {
       const key = seriesKeyForName(s.name)
-      const cur = byKey.get(key) ?? { seriesKey: key, label: SERIES_LABEL[key], cost: 0, tokens: 0 }
-      cur.cost += s.cost_usd ?? 0
+      const cur = byKey.get(key) ?? { seriesKey: key, label: SERIES_LABEL[key], cost: null, tokens: 0 }
+      if (s.cost_usd != null) cur.cost = (cur.cost ?? 0) + s.cost_usd
       cur.tokens += (s.input_tokens ?? 0) + (s.output_tokens ?? 0)
       byKey.set(key, cur)
       walk(s.children)
@@ -160,7 +163,7 @@ export function perRoleCost(trace: TraceDetail): RoleCost[] {
   }
   walk(trace.spans)
   return SERIES_ORDER.map((k) => byKey.get(k)).filter(
-    (r): r is RoleCost => !!r && (r.cost > 0 || r.tokens > 0),
+    (r): r is RoleCost => !!r && ((r.cost != null && r.cost > 0) || r.tokens > 0),
   )
 }
 

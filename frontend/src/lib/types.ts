@@ -17,7 +17,11 @@ export interface SpanNode {
   output_tokens: number
   cache_read_tokens: number
   cache_creation_tokens: number
-  cost_usd?: number // per-span cost (spec 06); absent on older traces
+  // Per-span cost is NOT serialized by GET /traces/{id} (backend/app/api/traces.py only exposes
+  // token counts per span; `cost_usd()` is applied to the run total and to /traces/stats per-role
+  // rollups). Kept optional so a future backend that does emit it flows straight through — every
+  // consumer must treat `undefined` as "unavailable", never as 0.
+  cost_usd?: number
   retries: number
   error: string | null
   children: SpanNode[]
@@ -35,8 +39,11 @@ export interface TraceListItem {
   total_cost_usd: number
   cache_hit_pct: number
   retries: number
-  langfuse_url?: string | null // spec 06 deep-link
-  cost_breach?: boolean // spec 06 budget flag
+  langfuse_url?: string | null // spec 06 deep-link (not on the list endpoint today)
+  over_budget?: boolean // backend's combined cost-OR-latency flag (GET /traces)
+  // Split out of `over_budget` in api.ts against the `budgets` limits the same response carries —
+  // the backend collapses both breaches into one boolean, the table shows which one tripped.
+  cost_breach?: boolean
   latency_breach?: boolean
 }
 
@@ -52,7 +59,11 @@ export interface TraceDetail {
   total_cost_usd: number
   cache_hit_pct: number
   spans: SpanNode[]
-  budgets?: Budgets | null // spec 06
+  over_budget?: boolean // backend's combined cost-OR-latency flag (GET /traces/{id})
+  // Composed in api.ts: the detail endpoint returns only `over_budget`, so the limits come from
+  // the `budgets` block on GET /traces and the two breaches are re-derived from them.
+  budgets?: Budgets | null
+  langfuse_trace_id?: string | null
   langfuse_url?: string | null // spec 06 deep-link
 }
 
@@ -134,17 +145,28 @@ export interface SkillInvocation {
   script_result: string | null
 }
 
+/** A proposal from the gated `escalate` tool (backend/app/tools/registry.py::EscalateResult).
+ * The tool writes nothing — it mints a `handle` ("ESC-<hex8>") that POST /agent/escalations
+ * later commits. The current triage pipeline does not surface a proposal on its result at all,
+ * so every field beyond `proposed`/`reason` is optional and the UI hides the gate when absent. */
 export interface EscalationProposal {
   proposed: boolean
   reason: string
-  ticket_id: number
-  preview: string
+  handle?: string
+  severity?: 'low' | 'medium' | 'high'
+  ticket_ref?: string | null
+  ticket_id?: number | null // a saved `tickets` row id — required for the ticket-status write
+  preview?: string
 }
 
+/** Response of POST /agent/escalations (backend/app/api/escalations.py::approve). */
 export interface EscalationHandle {
+  id: number
   handle: string
   status: string
-  committed_at: string
+  assignee: string | null
+  decided_at: string
+  ticket_id: number | null
 }
 
 export type TriageStep = 'classify' | 'plan' | 'retrieve' | 'resolve' | 'critique' | 'revise'
@@ -226,9 +248,15 @@ export interface EvalRun {
   helpfulness_avg: number
   total_cost_usd: number
   cases: EvalCase[]
-  failure_taxonomy?: FailureTaxonomyBucket[] // spec 07 aggregate
-  baseline?: EvalBaseline | null // spec 07 regression baseline
-  regression_failed?: boolean // spec 07 gate result
+  // Mapped in api.ts from the backend's `failure_breakdown` dict ({label: count}).
+  failure_taxonomy?: FailureTaxonomyBucket[]
+  // Mapped in api.ts from the backend's `regression` boolean.
+  regression_failed?: boolean
+  // PARTIAL by construction: the backend only exposes baseline numbers through
+  // `regression_detail` on POST /evals/run, and only for the metrics that actually regressed
+  // (GET /evals exposes none at all — baseline.json is server-side only). Consumers must guard
+  // the individual metric they read, not just this container.
+  baseline?: Partial<EvalBaseline> | null
 }
 
 export interface TicketListItem {

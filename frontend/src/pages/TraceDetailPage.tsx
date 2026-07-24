@@ -22,6 +22,11 @@ export default function TraceDetailPage() {
 
   const speedup = trace ? retrievalSpeedup(trace) : null
   const roles = trace ? perRoleCost(trace) : []
+  // The API doesn't serialize per-span cost, so the per-role rollup has tokens but no money.
+  // Show the Cost column only when at least one role actually reported one.
+  const roleCostAvailable = roles.some((r) => r.cost != null)
+  const costLimit = trace?.budgets?.cost_limit_usd
+  const latencyLimit = trace?.budgets?.latency_limit_seconds
 
   return (
     <div className="viz space-y-4">
@@ -51,10 +56,10 @@ export default function TraceDetailPage() {
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiCard label="Total cost" value={`$${trace.total_cost_usd.toFixed(6)}`}
-              sub={trace.budgets ? `budget $${trace.budgets.cost_limit_usd.toFixed(4)}` : undefined}
+              sub={costLimit != null ? `budget $${costLimit.toFixed(4)}` : undefined}
               breach={trace.budgets?.cost_breach ?? false} />
             <KpiCard label="Duration" value={`${trace.duration_seconds.toFixed(2)}s`}
-              sub={trace.budgets ? `budget ${trace.budgets.latency_limit_seconds.toFixed(1)}s` : undefined}
+              sub={latencyLimit != null ? `budget ${latencyLimit.toFixed(1)}s` : undefined}
               breach={trace.budgets?.latency_breach ?? false} />
             <KpiCard label="Cache-hit" value={`${trace.cache_hit_pct.toFixed(1)}%`} />
             <KpiCard label="Total tokens" value={trace.total_tokens.toLocaleString()} />
@@ -73,14 +78,16 @@ export default function TraceDetailPage() {
 
           {underTheHood && roles.length > 0 && (
             <section className="rounded-lg border border-border bg-primary/30 p-4">
-              <h2 className="mb-3 text-sm font-medium text-foreground">Per-role cost</h2>
+              <h2 className="mb-3 text-sm font-medium text-foreground">
+                {roleCostAvailable ? 'Per-role cost' : 'Per-role tokens'}
+              </h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-xs text-mutedForeground">
                       <th className="px-3 py-2 font-medium">Role</th>
                       <th className="px-3 py-2 font-medium text-right">Tokens</th>
-                      <th className="px-3 py-2 font-medium text-right">Cost</th>
+                      {roleCostAvailable && <th className="px-3 py-2 font-medium text-right">Cost</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -88,12 +95,24 @@ export default function TraceDetailPage() {
                       <tr key={r.seriesKey} className="border-b border-border/60 last:border-0">
                         <td className="px-3 py-2">{r.label}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.tokens.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">${r.cost.toFixed(6)}</td>
+                        {roleCostAvailable && (
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {r.cost != null ? `$${r.cost.toFixed(6)}` : '—'}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {!roleCostAvailable && (
+                <p className="mt-2 text-[11px] text-mutedForeground">
+                  Per-role cost is not available: <code className="text-foreground">GET /traces/{'{'}id{'}'}</code> reports
+                  tokens per span but prices only the run total (${trace.total_cost_usd.toFixed(6)} above). Per-role
+                  cost across all runs of this pipeline is available from{' '}
+                  <code className="text-foreground">GET /traces/stats</code>.
+                </p>
+              )}
             </section>
           )}
         </>
