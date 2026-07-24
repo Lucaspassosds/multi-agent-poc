@@ -1,15 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Warning } from '@phosphor-icons/react'
+import Badge from '../components/Badge'
 import { getTraces } from '../lib/api'
 import type { TraceListItem } from '../lib/types'
+import { useViewMode } from '../lib/viewMode'
 
 const PAGE_SIZE = 20
 
 export default function ObservabilityPage() {
+  const { underTheHood } = useViewMode()
   const [traces, setTraces] = useState<TraceListItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all')
+  const [nameFilter, setNameFilter] = useState('')
 
   useEffect(() => {
     getTraces(PAGE_SIZE, 0)
@@ -31,18 +37,53 @@ export default function ObservabilityPage() {
     }
   }
 
+  const filtered = useMemo(() => {
+    if (!traces) return []
+    const q = nameFilter.trim().toLowerCase()
+    return traces.filter(
+      (t) =>
+        (statusFilter === 'all' || t.status === statusFilter) &&
+        (q === '' || t.name.toLowerCase().includes(q)),
+    )
+  }, [traces, statusFilter, nameFilter])
+
   return (
     <div className="viz space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-foreground">Observability</h1>
+        <h1 className="text-xl font-semibold text-foreground">Run Inspector</h1>
         <p className="text-sm text-mutedForeground">
-          Traces from the Stripe payments support-triage agent — tokens, cost, parallelism, retries.
+          Every triage run, fully traced — duration, tokens, cost, cache-hit, parallelism, retries.
+          {underTheHood
+            ? ' Open a run for the span waterfall, per-role cost, budget breaches, and the Langfuse deep link.'
+            : ' Open a run to see how the pipeline spent its time.'}
         </p>
       </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-xs text-mutedForeground">
+          Status
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ok' | 'error')}
+            className="ml-2 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+          >
+            <option value="all">all</option>
+            <option value="ok">ok</option>
+            <option value="error">error</option>
+          </select>
+        </label>
+        <input
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          placeholder="filter by name…"
+          className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-mutedForeground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        />
+      </div>
+
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {!traces && !error && <p className="text-sm text-mutedForeground">Loading traces…</p>}
+      {!traces && !error && <p className="text-sm text-mutedForeground">Loading runs…</p>}
       {traces && traces.length === 0 && (
-        <p className="text-sm text-mutedForeground">No traces yet — submit a ticket on the Triage screen first.</p>
+        <p className="text-sm text-mutedForeground">No runs yet — submit a ticket on the Triage screen first.</p>
       )}
       {traces && traces.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -56,41 +97,55 @@ export default function ObservabilityPage() {
                 <th className="px-3 py-2 font-medium text-right">Tokens</th>
                 <th className="px-3 py-2 font-medium text-right">Cost</th>
                 <th className="px-3 py-2 font-medium text-right">Cache-hit</th>
-                <th className="px-3 py-2 font-medium text-right">Retries</th>
+                {underTheHood && <th className="px-3 py-2 font-medium text-right">Retries</th>}
+                <th className="px-3 py-2 font-medium">Budget</th>
               </tr>
             </thead>
             <tbody>
-              {traces.map((t) => (
-                <tr key={t.id} className="border-b border-border/60 last:border-0 hover:bg-primary/40">
-                  <td className="px-3 py-2">
-                    <Link to={`/observability/${t.id}`} className="text-accent hover:underline">
-                      {t.id}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">{t.name}</td>
-                  <td className="px-3 py-2">
-                    <span
-                      className="inline-flex items-center gap-1.5 text-xs"
-                      style={{ color: t.status === 'ok' ? 'var(--status-good)' : 'var(--status-critical)' }}
-                    >
+              {filtered.map((t) => {
+                const breached = t.cost_breach || t.latency_breach
+                return (
+                  <tr key={t.id} className="border-b border-border/60 last:border-0 hover:bg-primary/40">
+                    <td className="px-3 py-2">
+                      <Link to={`/observability/${t.id}`} className="text-accent hover:underline">
+                        {t.id}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">{t.name}</td>
+                    <td className="px-3 py-2">
                       <span
-                        className="w-1.5 h-1.5 rounded-full inline-block"
-                        style={{ background: t.status === 'ok' ? 'var(--status-good)' : 'var(--status-critical)' }}
-                      />
-                      {t.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{t.duration_seconds.toFixed(2)}s</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{t.total_tokens.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">${t.total_cost_usd.toFixed(6)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{t.cache_hit_pct.toFixed(1)}%</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{t.retries}</td>
-                </tr>
-              ))}
+                        className="inline-flex items-center gap-1.5 text-xs"
+                        style={{ color: t.status === 'ok' ? 'var(--status-good)' : 'var(--status-critical)' }}
+                      >
+                        <span
+                          className="inline-block h-1.5 w-1.5 rounded-full"
+                          style={{ background: t.status === 'ok' ? 'var(--status-good)' : 'var(--status-critical)' }}
+                        />
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.duration_seconds.toFixed(2)}s</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.total_tokens.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">${t.total_cost_usd.toFixed(6)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{t.cache_hit_pct.toFixed(1)}%</td>
+                    {underTheHood && <td className="px-3 py-2 text-right tabular-nums">{t.retries}</td>}
+                    <td className="px-3 py-2">
+                      {breached ? (
+                        <Badge tone="destructive">
+                          <Warning size={12} weight="fill" />
+                          {t.cost_breach && t.latency_breach ? 'cost + latency' : t.cost_breach ? 'cost' : 'latency'}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-mutedForeground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
-          <div className="flex items-center justify-between px-3 py-2 text-xs text-mutedForeground border-t border-border">
-            <span>Showing {traces.length} of {total}</span>
+          <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-mutedForeground">
+            <span>Showing {filtered.length} of {total}</span>
             {traces.length < total && (
               <button
                 type="button"

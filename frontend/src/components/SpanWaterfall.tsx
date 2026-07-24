@@ -25,7 +25,7 @@ function Legend({ seriesInUse }: { seriesInUse: Set<string> }) {
   )
 }
 
-export default function SpanWaterfall({ rows }: { rows: WaterfallRow[] }) {
+export default function SpanWaterfall({ rows, dense = false }: { rows: WaterfallRow[]; dense?: boolean }) {
   const [selected, setSelected] = useState<string | null>(null)
 
   if (rows.length === 0) {
@@ -76,9 +76,23 @@ export default function SpanWaterfall({ rows }: { rows: WaterfallRow[] }) {
                   }}
                 />
               </button>
-              <span className="w-14 shrink-0 text-right text-xs tabular-nums text-[var(--viz-text-muted)]">
+              <span className="flex w-14 shrink-0 items-center justify-end gap-1 text-right text-xs tabular-nums text-[var(--viz-text-muted)]">
+                {row.retries != null && row.retries > 0 && (
+                  <span
+                    className="rounded-sm bg-[var(--status-critical)]/20 px-1 text-[10px]"
+                    style={{ color: 'var(--status-critical)' }}
+                    title={`${row.retries} retr${row.retries === 1 ? 'y' : 'ies'}`}
+                  >
+                    ↻{row.retries}
+                  </span>
+                )}
                 {row.duration != null ? `${row.duration.toFixed(2)}s` : '…'}
               </span>
+              {dense && (
+                <span className="w-16 shrink-0 text-right text-xs tabular-nums text-[var(--viz-text-muted)]">
+                  {row.cost != null ? `$${row.cost.toFixed(6)}` : '—'}
+                </span>
+              )}
             </div>
           )
         })}
