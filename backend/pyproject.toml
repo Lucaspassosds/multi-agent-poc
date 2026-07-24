@@ -20,4 +20,6 @@ dependencies = [
     "google-genai>=1.0",
     # Phase 5 — Model Context Protocol server + client
     "mcp>=1.2",
+    # Phase 5/6 — Skills: real YAML frontmatter parsing
+    "pyyaml>=6",
 ]
