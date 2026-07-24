@@ -1,6 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import MetricBar from '../components/MetricBar'
+import FailureTaxonomyBars from '../components/FailureTaxonomyBars'
+import KpiCard from '../components/KpiCard'
+import Badge from '../components/Badge'
+import CitationBadge from '../components/CitationBadge'
+import { useViewMode } from '../lib/viewMode'
 import { getEvals, runEvals } from '../lib/api'
 import type { EvalRun, RetrievalMode } from '../lib/types'
 
@@ -23,6 +28,7 @@ export default function EvalsPage() {
   const [runError, setRunError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const intervalRef = useRef<number | undefined>(undefined)
+  const { underTheHood } = useViewMode()
 
   useEffect(() => {
     getEvals()
@@ -60,10 +66,10 @@ export default function EvalsPage() {
   return (
     <div className="viz space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-foreground">Evals</h1>
+        <h1 className="text-xl font-semibold text-foreground">Quality Dashboard</h1>
         <p className="text-sm text-mutedForeground">
           Golden-set scores for the Stripe payments support-triage agent, graded against real
-          Stripe-docs-grounded retrieval.
+          Stripe-docs-grounded retrieval — with a per-category failure taxonomy and regression gating.
         </p>
       </div>
 
@@ -109,6 +115,28 @@ export default function EvalsPage() {
 
       {run && (
         <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiCard label="Classification" value={run.classification_accuracy.toFixed(2)} />
+            <KpiCard label="Retrieval hit-rate" value={run.retrieval_hit_rate.toFixed(2)} />
+            <KpiCard label="Faithfulness" value={run.faithfulness_avg.toFixed(2)} />
+            <KpiCard label="Helpfulness" value={run.helpfulness_avg.toFixed(2)} />
+          </div>
+
+          {run.regression_failed != null && (
+            <Badge tone={run.regression_failed ? 'destructive' : 'success'}>
+              {run.regression_failed
+                ? 'Regression vs baseline — quality dropped, gate would FAIL'
+                : 'No regression vs baseline — gate PASSES'}
+            </Badge>
+          )}
+
+          {run.failure_taxonomy && run.failure_taxonomy.length > 0 && (
+            <section className="rounded-lg border border-border bg-primary/30 p-4">
+              <h2 className="mb-3 text-sm font-medium text-foreground">Failure taxonomy (per category)</h2>
+              <FailureTaxonomyBars buckets={run.failure_taxonomy} />
+            </section>
+          )}
+
           <section className="rounded-lg border border-border bg-primary/30 p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-medium text-foreground">
@@ -122,7 +150,12 @@ export default function EvalsPage() {
               {METRICS.map((m) => (
                 <div key={m.key}>
                   <MetricBar label={m.label} value={run[m.key] as number} />
-                  {previousRun && previousRun.retrieval_mode !== run.retrieval_mode && (
+                  {run.baseline && (
+                    <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
+                      baseline: {(run.baseline[m.key as keyof typeof run.baseline] as number).toFixed(2)}
+                    </p>
+                  )}
+                  {!run.baseline && previousRun && previousRun.retrieval_mode !== run.retrieval_mode && (
                     <p className="mt-1 text-[11px] text-mutedForeground tabular-nums">
                       vs {previousRun.retrieval_mode}: {(previousRun[m.key] as number).toFixed(2)}
                     </p>
@@ -132,65 +165,82 @@ export default function EvalsPage() {
             </div>
           </section>
 
-          <section className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs text-mutedForeground">
-                  <th className="px-3 py-2 font-medium">Case</th>
-                  <th className="px-3 py-2 font-medium">Category</th>
-                  <th className="px-3 py-2 font-medium">Priority</th>
-                  <th className="px-3 py-2 font-medium text-right">Hit</th>
-                  <th className="px-3 py-2 font-medium text-right">Coverage</th>
-                  <th className="px-3 py-2 font-medium text-right">Faithful.</th>
-                  <th className="px-3 py-2 font-medium text-right">Helpful.</th>
-                  <th className="px-3 py-2 font-medium text-right">Trace</th>
-                </tr>
-              </thead>
-              <tbody>
-                {run.cases.map((c) => (
-                  <Fragment key={c.golden_id}>
-                    <tr
-                      className="border-b border-border/60 hover:bg-primary/40 cursor-pointer"
-                      onClick={() => toggle(c.golden_id)}
-                    >
-                      <td className="px-3 py-2 max-w-[16rem] truncate" title={c.ticket}>{c.ticket}</td>
-                      <td className="px-3 py-2" style={{ color: c.category_correct ? 'var(--status-good)' : 'var(--status-critical)' }}>
-                        {c.predicted_category}{!c.category_correct && ` (expected ${c.expected_category})`}
-                      </td>
-                      <td className="px-3 py-2" style={{ color: c.priority_correct ? 'var(--status-good)' : 'var(--status-critical)' }}>
-                        {c.predicted_priority}{!c.priority_correct && ` (expected ${c.expected_priority})`}
-                      </td>
-                      <td className="px-3 py-2 text-right" style={{ color: c.retrieval_hit ? 'var(--status-good)' : 'var(--status-critical)' }}>
-                        {c.retrieval_hit ? 'yes' : 'no'}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{c.citation_coverage.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{c.faithfulness_score.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{c.helpfulness_score.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {c.trace_id != null && (
-                          <Link
-                            to={`/observability/${c.trace_id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-accent hover:underline"
-                          >
-                            #{c.trace_id}
-                          </Link>
-                        )}
-                      </td>
-                    </tr>
-                    {expanded.has(c.golden_id) && (
-                      <tr className="border-b border-border/60 bg-primary/20">
-                        <td colSpan={8} className="px-3 py-3 text-xs text-mutedForeground space-y-1.5">
-                          <p><span className="text-foreground font-medium">Faithfulness reasoning:</span> {c.faithfulness_reasoning}</p>
-                          <p><span className="text-foreground font-medium">Helpfulness reasoning:</span> {c.helpfulness_reasoning}</p>
+          {underTheHood && (
+            <section className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-mutedForeground">
+                    <th className="px-3 py-2 font-medium">Case</th>
+                    <th className="px-3 py-2 font-medium">Category</th>
+                    <th className="px-3 py-2 font-medium">Priority</th>
+                    <th className="px-3 py-2 font-medium text-right">Hit</th>
+                    <th className="px-3 py-2 font-medium text-right">Coverage</th>
+                    <th className="px-3 py-2 font-medium text-right">Faithful.</th>
+                    <th className="px-3 py-2 font-medium text-right">Helpful.</th>
+                    <th className="px-3 py-2 font-medium text-right">Trace</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {run.cases.map((c) => (
+                    <Fragment key={c.golden_id}>
+                      <tr
+                        className="border-b border-border/60 hover:bg-primary/40 cursor-pointer"
+                        onClick={() => toggle(c.golden_id)}
+                      >
+                        <td className="px-3 py-2 max-w-[16rem] truncate" title={c.ticket}>{c.ticket}</td>
+                        <td className="px-3 py-2" style={{ color: c.category_correct ? 'var(--status-good)' : 'var(--status-critical)' }}>
+                          {c.predicted_category}{!c.category_correct && ` (expected ${c.expected_category})`}
+                        </td>
+                        <td className="px-3 py-2" style={{ color: c.priority_correct ? 'var(--status-good)' : 'var(--status-critical)' }}>
+                          {c.predicted_priority}{!c.priority_correct && ` (expected ${c.expected_priority})`}
+                        </td>
+                        <td className="px-3 py-2 text-right" style={{ color: c.retrieval_hit ? 'var(--status-good)' : 'var(--status-critical)' }}>
+                          {c.retrieval_hit ? 'yes' : 'no'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{c.citation_coverage.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{c.faithfulness_score.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{c.helpfulness_score.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {c.trace_id != null && (
+                            <Link
+                              to={`/observability/${c.trace_id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-accent hover:underline"
+                            >
+                              #{c.trace_id}
+                            </Link>
+                          )}
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </section>
+                      {expanded.has(c.golden_id) && (
+                        <tr className="border-b border-border/60 bg-primary/20">
+                          <td colSpan={8} className="space-y-2 px-3 py-3 text-xs text-mutedForeground">
+                            {c.failure_labels && c.failure_labels.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {c.failure_labels.map((l) => (
+                                  <Badge key={l} tone="destructive">{l}</Badge>
+                                ))}
+                              </div>
+                            )}
+                            {c.retrieved_context && c.retrieved_context.length > 0 && (
+                              <p className="flex flex-wrap items-center gap-1.5">
+                                <span className="font-medium text-foreground">Retrieved context:</span>
+                                {c.retrieved_context.map((cc) => (
+                                  <CitationBadge key={cc.chunk_id} citation={cc} />
+                                ))}
+                              </p>
+                            )}
+                            <p><span className="font-medium text-foreground">Faithfulness reasoning:</span> {c.faithfulness_reasoning}</p>
+                            <p><span className="font-medium text-foreground">Helpfulness reasoning:</span> {c.helpfulness_reasoning}</p>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
         </>
       )}
     </div>
