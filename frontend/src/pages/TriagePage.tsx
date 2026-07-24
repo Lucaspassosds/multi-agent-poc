@@ -1,4 +1,4 @@
-import { PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
+import { Command, PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
 import { Fragment, useEffect, useReducer, useRef, useState } from 'react'
 import ClassificationChips from '../components/ClassificationChips'
 import CitationBadge from '../components/CitationBadge'
@@ -6,10 +6,10 @@ import HowItWorks from '../components/HowItWorks'
 import ReplyCard from '../components/ReplyCard'
 import SpanWaterfall from '../components/SpanWaterfall'
 import TicketSidebar from '../components/TicketSidebar'
-import { getTicket, getTickets, getTrace } from '../lib/api'
+import { getMcpPrompts, getTicket, getTickets, getTrace } from '../lib/api'
 import { getOrCreateSessionId } from '../lib/session'
 import { streamTriage } from '../lib/sse'
-import type { CitedChunk, Classification, TicketListItem, TriageResult } from '../lib/types'
+import type { CitedChunk, Classification, McpPrompt, TicketListItem, TriageResult } from '../lib/types'
 import { useViewMode } from '../lib/viewMode'
 import { seriesKeyForName, triageRestoreRows, type WaterfallRow } from '../lib/waterfall'
 
@@ -140,8 +140,16 @@ export default function TriagePage() {
     }
   }
 
+  const [prompts, setPrompts] = useState<McpPrompt[]>([])
+
   useEffect(() => {
     void refreshTickets()
+  }, [])
+
+  useEffect(() => {
+    getMcpPrompts()
+      .then((r) => setPrompts(r.prompts))
+      .catch(() => setPrompts([])) // MCP prompts are an optional flourish; ignore if the endpoint is down.
   }, [])
 
   function newTicket() {
@@ -287,6 +295,25 @@ export default function TriagePage() {
               </button>
             ))}
           </div>
+          {prompts.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-mutedForeground">
+                <Command size={12} weight="regular" />
+                MCP prompts
+              </span>
+              {prompts.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  title={p.description}
+                  onClick={() => setMessage(p.template)}
+                  className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent hover:bg-accent/20"
+                >
+                  /{p.name}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             disabled={!message.trim() || running}
