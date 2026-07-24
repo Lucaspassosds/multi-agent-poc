@@ -35,6 +35,8 @@ class HitScores(BaseModel):
     lexical: float | None = None
     semantic: float | None = None
     fused: float
+    lexical_rank: int | None = None
+    semantic_rank: int | None = None
 
 
 class SearchHit(BaseModel):
@@ -217,6 +219,8 @@ def hit_from_row(row: dict) -> SearchHit:
             lexical=row.get("lexical_score"),
             semantic=row.get("semantic_score"),
             fused=row["score"],
+            lexical_rank=row.get("lexical_rank"),
+            semantic_rank=row.get("semantic_rank"),
         ),
     )
 

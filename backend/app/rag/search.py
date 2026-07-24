@@ -65,21 +65,26 @@ async def hybrid_search(query: str, k: int = 10, rrf_k: int = 60, candidate_pool
     meta: dict[int, dict] = {}
     lex_score: dict[int, float] = {}
     sem_score: dict[int, float] = {}
+    lex_rank: dict[int, int] = {}
+    sem_rank: dict[int, int] = {}
     for source, ranked in (("lexical", lex), ("semantic", sem)):
         for rank, row in enumerate(ranked):
             cid = row["id"]
             scores[cid] = scores.get(cid, 0.0) + 1.0 / (rrf_k + rank + 1)
             meta[cid] = row
             (lex_score if source == "lexical" else sem_score)[cid] = row["score"]
+            (lex_rank if source == "lexical" else sem_rank)[cid] = rank + 1
 
     top = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:k]
     out: list[dict] = []
     for cid in top:
-        row = {**meta[cid], "score": round(scores[cid], 6)}
+        row = {**meta[cid], "score": round(scores[cid], 6), "rrf_score": round(scores[cid], 6)}
         if detailed:
             # Component contributions per source (None if that source didn't surface this chunk).
             row["lexical_score"] = round(lex_score[cid], 6) if cid in lex_score else None
             row["semantic_score"] = round(sem_score[cid], 6) if cid in sem_score else None
+            row["lexical_rank"] = lex_rank.get(cid)    # 1-based, None if absent from that list
+            row["semantic_rank"] = sem_rank.get(cid)
         out.append(row)
     return out
 

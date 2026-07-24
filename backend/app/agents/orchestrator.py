@@ -24,6 +24,7 @@ from app.llm.base import Usage, user
 from app.llm.factory import get_provider
 from app.mcp.client import mcp_search_or_local
 from app.observability import Trace, span
+from app.rag.rerank import rerank
 from app.skills.loader import list_skills, load_skill, run_skill_script
 
 
@@ -111,12 +112,14 @@ async def _plan(ticket: str):
         return result, usage
 
 
-async def _retrieve(subquestion: str, search_fn):
-    """A retriever subagent: search (via the injected transport), then summarize into a
-    compact, cited evidence note."""
+async def _retrieve(subquestion: str, search_fn, do_rerank: bool = False):
+    """A retriever subagent: search (via the injected transport), optionally rerank the
+    over-fetched pool, then summarize into a compact, cited evidence note."""
     async with span("retriever", "subagent", model=settings.model_classify) as s:
         t0 = time.time()
-        rows = await search_fn(subquestion, 4)
+        rows = await search_fn(subquestion, 8 if do_rerank else 4)
+        if do_rerank:
+            rows = await rerank(subquestion, rows, top_k=4)
         evidence = "\n".join(f"- [{r['title']}] {r['content'][:200]}" for r in rows)
         summary, usage = await _complete_text(
             settings.model_classify, PROMPTS["retrieve"],
@@ -129,7 +132,10 @@ async def _retrieve(subquestion: str, search_fn):
             "summary": summary,
             "cited": [
                 {"chunk_id": r["id"], "title": r["title"], "source_type": r["source_type"],
-                 "snippet": r["content"][:300]}
+                 "snippet": r["content"][:300],
+                 "lexical_rank": r.get("lexical_rank"), "semantic_rank": r.get("semantic_rank"),
+                 "rrf_score": r.get("rrf_score"), "rerank_score": r.get("rerank_score"),
+                 "why": r.get("why")}
                 for r in rows
             ],
             "seconds": round(time.time() - t0, 2),
@@ -251,9 +257,9 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         await emit({"type": "step_done", "step": "plan", "data": result})
         return result, step_usage
 
-    async def _retrieve_emit(index: int, subquestion: str, search_fn):
+    async def _retrieve_emit(index: int, subquestion: str, search_fn, do_rerank: bool):
         await emit({"type": "step_start", "step": "retrieve", "index": index, "subquestion": subquestion})
-        result, step_usage = await _retrieve(subquestion, search_fn)
+        result, step_usage = await _retrieve(subquestion, search_fn, do_rerank)
         await emit({"type": "step_done", "step": "retrieve", "index": index, "data": result})
         return result, step_usage
 
@@ -271,10 +277,11 @@ async def _run_pipeline(ticket: str, max_subquestions: int = 3, use_skill: bool 
         # 2) retrievers in parallel — routed through MCP (the backbone) with in-process fallback
         t0 = time.time()
         retrieval_transport = "in-process"
+        do_rerank = settings.rerank_enabled and search_mode == "hybrid"
         async with mcp_search_or_local(search_mode) as (search_fn, transport):
             retrieval_transport = transport
             retrieved = await asyncio.gather(
-                *[_retrieve_emit(i, q, search_fn) for i, q in enumerate(questions)]
+                *[_retrieve_emit(i, q, search_fn, do_rerank) for i, q in enumerate(questions)]
             )
         parallel_seconds = round(time.time() - t0, 2)
         evidences = [r for r, _ in retrieved]

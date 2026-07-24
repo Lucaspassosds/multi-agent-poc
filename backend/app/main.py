@@ -112,6 +112,9 @@ def _trim(rows: list[dict], preview: int = 240) -> list[dict]:
             "url": r["url"],
             "score": r["score"],
             "preview": (r["content"][:preview] + "…") if len(r["content"]) > preview else r["content"],
+            "lexical_rank": r.get("lexical_rank"),
+            "semantic_rank": r.get("semantic_rank"),
+            "rrf_score": r.get("rrf_score"),
         })
     return out
 
@@ -122,6 +125,9 @@ async def search(
     mode: str = Query("hybrid", pattern="^(lexical|semantic|hybrid)$"),
     k: int = Query(5, ge=1, le=25),
 ):
-    fn = search_mod.SEARCH_FNS[mode]
-    rows = await fn(q, k)
+    if mode == "hybrid":
+        rows = await search_mod.hybrid_search(q, k, detailed=True)
+    else:
+        fn = search_mod.SEARCH_FNS[mode]
+        rows = await fn(q, k)
     return {"mode": mode, "query": q, "results": _trim(rows)}

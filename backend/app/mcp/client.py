@@ -61,7 +61,10 @@ def _hits_to_rows(result_json: str) -> list[dict]:
     hits = data.get("hits", []) if isinstance(data, dict) else []
     return [{"id": h["chunk_id"], "document_id": h["document_id"],
              "source_type": h["source_type"], "title": h["title"],
-             "content": h["preview"], "score": h["scores"]["fused"]}
+             "content": h["preview"], "score": h["scores"]["fused"],
+             "rrf_score": h["scores"]["fused"],
+             "lexical_rank": h["scores"].get("lexical_rank"),
+             "semantic_rank": h["scores"].get("semantic_rank")}
             for h in hits]
 
 
