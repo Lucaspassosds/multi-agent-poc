@@ -65,12 +65,29 @@ def _hits_to_rows(result_json: str) -> list[dict]:
             for h in hits]
 
 
+async def _in_process_hybrid(subq: str, k: int) -> list[dict]:
+    """Shared fallback body: run hybrid search through the in-process registry.
+    Reused both for connect-time failure (mcp never comes up) and call-time failure
+    (mcp was up but a given call blew up mid-request) — one body, two call sites."""
+    result = await registry.hybrid_search(query=subq, k=k)
+    return _hits_to_rows(result.model_dump_json())
+
+
 @asynccontextmanager
 async def mcp_search_or_local(search_mode: str):
     """Yield (search_fn, transport). For hybrid mode, probe the MCP server and — if up —
     run retrieval THROUGH the protocol (MCP is the backbone). If the mcp service is down,
     or the mode is lexical/semantic (eval-regression, not exposed over MCP), fall back to
-    the in-process path. Capability negotiation (server name/proto/primitives) is logged."""
+    the in-process path. Capability negotiation (server name/proto/primitives) is logged.
+
+    Yields exactly once per invocation, no matter what: a call-time failure inside
+    `via_mcp` (mcp connected fine but a later call_tool breaks, e.g. transport drop,
+    server restart, bad result payload) must NOT reach this generator after it has
+    already suspended at `yield via_mcp, "mcp"` — reraising there would force a second
+    `yield` on the resume path, which @asynccontextmanager forbids (RuntimeError:
+    "generator didn't stop after athrow()"). So `via_mcp` self-heals internally instead
+    of letting the exception propagate up to here; transport stays reported as "mcp"
+    since the connection itself is still up — only that one call silently degrades."""
     if search_mode != "hybrid":
         # rag/search.py already exposes a SEARCH_FNS dispatch dict
         # ({"lexical": lexical_search, "semantic": semantic_search, "hybrid": hybrid_search})
@@ -87,16 +104,18 @@ async def mcp_search_or_local(search_mode: str):
             print(f"[mcp] backbone up: tools={[t.name for t in init_tools.tools]}")
 
             async def via_mcp(subq: str, k: int):
-                res = await session.call_tool("hybrid_search", arguments={"query": subq, "k": k})
-                texts = [c.text for c in res.content if getattr(c, "type", None) == "text"]
-                return _hits_to_rows(texts[0]) if texts else []
+                try:
+                    res = await session.call_tool("hybrid_search", arguments={"query": subq, "k": k})
+                    texts = [c.text for c in res.content if getattr(c, "type", None) == "text"]
+                    return _hits_to_rows(texts[0]) if texts else []
+                except Exception as exc:  # noqa: BLE001 - call-time failure -> per-call fallback
+                    print(f"[mcp] call failed mid-retrieval ({exc!r}); falling back to "
+                          "in-process registry for this call")
+                    return await _in_process_hybrid(subq, k)
 
             yield via_mcp, "mcp"
             return
     except Exception as exc:  # noqa: BLE001 - MCP down -> graceful in-process fallback
         print(f"[mcp] backbone unavailable ({exc!r}); falling back to in-process registry")
 
-    async def fallback(subq: str, k: int):
-        result = await registry.hybrid_search(query=subq, k=k)
-        return _hits_to_rows(result.model_dump_json())
-    yield fallback, "in-process"
+    yield _in_process_hybrid, "in-process"
