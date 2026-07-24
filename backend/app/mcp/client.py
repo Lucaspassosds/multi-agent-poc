@@ -7,7 +7,7 @@ This is provider-agnostic: we convert MCP tool definitions into our neutral Tool
 """
 # ── Concept: MCP (CLIENT) ── converts MCP tool defs into our neutral ToolSpec + a dispatch that calls them over the protocol.
 import json
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -73,6 +73,17 @@ async def _in_process_hybrid(subq: str, k: int) -> list[dict]:
     return _hits_to_rows(result.model_dump_json())
 
 
+class _McpConnectFailure(Exception):
+    """Raised only by the connect sequence below — entering `mcp_session()` (opening the
+    transport) and the initial `list_tools()` handshake — strictly before any `yield` is
+    reached, and never by anything downstream of it. That makes it a safe, unambiguous
+    marker: the outer `except _McpConnectFailure` can only ever catch a real
+    connect-time failure, and can never accidentally catch an exception thrown back
+    into this generator (via `athrow()`) by the caller's `async with` body after
+    `yield via_mcp, "mcp"` has already suspended — that exception propagates instead,
+    exactly as @asynccontextmanager expects, with no second `yield` attempted."""
+
+
 @asynccontextmanager
 async def mcp_search_or_local(search_mode: str):
     """Yield (search_fn, transport). For hybrid mode, probe the MCP server and — if up —
@@ -80,14 +91,17 @@ async def mcp_search_or_local(search_mode: str):
     or the mode is lexical/semantic (eval-regression, not exposed over MCP), fall back to
     the in-process path. Capability negotiation (server name/proto/primitives) is logged.
 
-    Yields exactly once per invocation, no matter what: a call-time failure inside
-    `via_mcp` (mcp connected fine but a later call_tool breaks, e.g. transport drop,
-    server restart, bad result payload) must NOT reach this generator after it has
-    already suspended at `yield via_mcp, "mcp"` — reraising there would force a second
-    `yield` on the resume path, which @asynccontextmanager forbids (RuntimeError:
-    "generator didn't stop after athrow()"). So `via_mcp` self-heals internally instead
-    of letting the exception propagate up to here; transport stays reported as "mcp"
-    since the connection itself is still up — only that one call silently degrades."""
+    Yields exactly once per invocation: a call-time failure inside `via_mcp` (mcp
+    connected fine but a later call_tool breaks, e.g. transport drop, server restart,
+    bad result payload) self-heals internally and never propagates, so it can never
+    reach the suspended `yield via_mcp, "mcp"`. But this generator does NOT swallow
+    every exception that reaches that suspended yield: only a genuine connect-time
+    failure (raised as `_McpConnectFailure`, strictly before the yield) triggers the
+    fallback yield. Anything else thrown back in here by the caller's `async with`
+    body (e.g. an LLM call failing elsewhere in the same `asyncio.gather`) is not a
+    `_McpConnectFailure` and propagates unmodified — attempting to catch-and-fallback
+    there would force a second `yield` on the resume path, which @asynccontextmanager
+    forbids (RuntimeError: "generator didn't stop after athrow()")."""
     if search_mode != "hybrid":
         # rag/search.py already exposes a SEARCH_FNS dispatch dict
         # ({"lexical": lexical_search, "semantic": semantic_search, "hybrid": hybrid_search})
@@ -99,8 +113,18 @@ async def mcp_search_or_local(search_mode: str):
         return
 
     try:
-        async with mcp_session() as session:
-            init_tools = await session.list_tools()
+        # AsyncExitStack (not a plain `async with mcp_session() as session:`) so the
+        # connect-time try/except below can guard BOTH failure points that precede any
+        # yield — opening the transport itself (`stack.enter_async_context`, e.g. the
+        # mcp service's TCP connect failing while it's down) and the `list_tools()`
+        # handshake — while still forwarding a thrown-in exception to `session`'s real
+        # `__aexit__` for cleanup exactly like a native nested `async with` would.
+        async with AsyncExitStack() as stack:
+            try:
+                session = await stack.enter_async_context(mcp_session())
+                init_tools = await session.list_tools()
+            except Exception as exc:  # noqa: BLE001 - connect-time failure -> fallback
+                raise _McpConnectFailure(exc) from exc
             print(f"[mcp] backbone up: tools={[t.name for t in init_tools.tools]}")
 
             async def via_mcp(subq: str, k: int):
@@ -115,7 +139,7 @@ async def mcp_search_or_local(search_mode: str):
 
             yield via_mcp, "mcp"
             return
-    except Exception as exc:  # noqa: BLE001 - MCP down -> graceful in-process fallback
-        print(f"[mcp] backbone unavailable ({exc!r}); falling back to in-process registry")
+    except _McpConnectFailure as exc:
+        print(f"[mcp] backbone unavailable ({exc.__cause__!r}); falling back to in-process registry")
 
     yield _in_process_hybrid, "in-process"
