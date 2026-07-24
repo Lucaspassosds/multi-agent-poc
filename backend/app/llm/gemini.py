@@ -57,9 +57,15 @@ def _to_tool(tools: list[ToolSpec]) -> types.Tool:
     return types.Tool(function_declarations=decls)
 
 
+def _first_candidate(resp):
+    # Gemini responses carry a candidates list; every reader wants candidates[0] with the same
+    # None-safe guard. One helper so text-extraction and tool/finish parsing agree on "the candidate".
+    return (getattr(resp, "candidates", None) or [None])[0]
+
+
 def _extract_text(resp) -> str:
     try:
-        cand = (resp.candidates or [None])[0]
+        cand = _first_candidate(resp)
         if not cand or not cand.content or not cand.content.parts:
             return ""
         return "".join(p.text for p in cand.content.parts if getattr(p, "text", None))
@@ -71,9 +77,9 @@ def _to_response(resp) -> LLMResponse:
     # Iterate the candidate's parts (not resp.function_calls) so we can keep each
     # function_call's original Part — it carries Gemini 3's required thought_signature.
     calls: list[ToolCall] = []
-    cand0 = (getattr(resp, "candidates", None) or [None])[0]
-    if cand0 and cand0.content and cand0.content.parts:
-        for i, part in enumerate(cand0.content.parts):
+    cand = _first_candidate(resp)
+    if cand and cand.content and cand.content.parts:
+        for i, part in enumerate(cand.content.parts):
             fc = getattr(part, "function_call", None)
             if fc:
                 calls.append(ToolCall(
@@ -86,7 +92,6 @@ def _to_response(resp) -> LLMResponse:
         output_tokens=getattr(um, "candidates_token_count", 0) or 0,
         cached_tokens=getattr(um, "cached_content_token_count", 0) or 0,
     )
-    cand = (getattr(resp, "candidates", None) or [None])[0]
     finish = str(getattr(cand, "finish_reason", None)) if cand else None
     return LLMResponse(text=_extract_text(resp), tool_calls=calls, usage=usage, finish_reason=finish, raw=resp)
 
