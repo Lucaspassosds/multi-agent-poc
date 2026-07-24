@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Warning } from '@phosphor-icons/react'
 import Badge from '../components/Badge'
-import { getTraces } from '../lib/api'
-import type { TraceListItem } from '../lib/types'
+import { getTrace, getTraces } from '../lib/api'
+import type { TraceDetail, TraceListItem } from '../lib/types'
 import { useViewMode } from '../lib/viewMode'
 
 const PAGE_SIZE = 20
@@ -16,6 +16,30 @@ export default function ObservabilityPage() {
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'all' | 'ok' | 'error'>('all')
   const [nameFilter, setNameFilter] = useState('')
+  const [compareIds, setCompareIds] = useState<number[]>([])
+  const [compareData, setCompareData] = useState<TraceDetail[] | null>(null)
+  const [comparing, setComparing] = useState(false)
+
+  function toggleCompare(id: number) {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
+      if (prev.length >= 2) return [prev[1], id] // keep the last two picked
+      return [...prev, id]
+    })
+    setCompareData(null)
+  }
+
+  async function runCompare() {
+    if (compareIds.length !== 2) return
+    setComparing(true)
+    try {
+      setCompareData(await Promise.all(compareIds.map((id) => getTrace(id))))
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setComparing(false)
+    }
+  }
 
   useEffect(() => {
     getTraces(PAGE_SIZE, 0)
@@ -90,6 +114,7 @@ export default function ObservabilityPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-mutedForeground">
+                <th className="px-3 py-2 font-medium">⇄</th>
                 <th className="px-3 py-2 font-medium">#</th>
                 <th className="px-3 py-2 font-medium">Name</th>
                 <th className="px-3 py-2 font-medium">Status</th>
@@ -106,6 +131,14 @@ export default function ObservabilityPage() {
                 const breached = t.cost_breach || t.latency_breach
                 return (
                   <tr key={t.id} className="border-b border-border/60 last:border-0 hover:bg-primary/40">
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={compareIds.includes(t.id)}
+                        onChange={() => toggleCompare(t.id)}
+                        aria-label={`select run ${t.id} to compare`}
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <Link to={`/observability/${t.id}`} className="text-accent hover:underline">
                         {t.id}
@@ -157,6 +190,61 @@ export default function ObservabilityPage() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {compareIds.length > 0 && (
+        <div className="rounded-lg border border-border bg-primary/30 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-foreground">
+              Compare runs {compareIds.map((id) => `#${id}`).join(' vs ')}
+            </h2>
+            <button
+              type="button"
+              onClick={runCompare}
+              disabled={compareIds.length !== 2 || comparing}
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-background disabled:opacity-40"
+            >
+              {comparing ? 'Loading…' : compareIds.length === 2 ? 'Compare' : 'Pick 2 runs'}
+            </button>
+          </div>
+          {compareData && compareData.length === 2 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-mutedForeground">
+                    <th className="px-3 py-2 font-medium">Metric</th>
+                    <th className="px-3 py-2 font-medium text-right">#{compareData[0].id}</th>
+                    <th className="px-3 py-2 font-medium text-right">#{compareData[1].id}</th>
+                    <th className="px-3 py-2 font-medium text-right">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { label: 'Cost ($)', a: compareData[0].total_cost_usd, b: compareData[1].total_cost_usd, dp: 6 },
+                    { label: 'Duration (s)', a: compareData[0].duration_seconds, b: compareData[1].duration_seconds, dp: 2 },
+                    { label: 'Cache-hit (%)', a: compareData[0].cache_hit_pct, b: compareData[1].cache_hit_pct, dp: 1 },
+                    { label: 'Tokens', a: compareData[0].total_tokens, b: compareData[1].total_tokens, dp: 0 },
+                  ].map((m) => {
+                    const delta = m.b - m.a
+                    return (
+                      <tr key={m.label} className="border-b border-border/60 last:border-0">
+                        <td className="px-3 py-2">{m.label}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{m.a.toFixed(m.dp)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{m.b.toFixed(m.dp)}</td>
+                        <td
+                          className="px-3 py-2 text-right tabular-nums"
+                          style={{ color: delta === 0 ? undefined : delta > 0 ? 'var(--status-critical)' : 'var(--status-good)' }}
+                        >
+                          {delta > 0 ? '+' : ''}{delta.toFixed(m.dp)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
