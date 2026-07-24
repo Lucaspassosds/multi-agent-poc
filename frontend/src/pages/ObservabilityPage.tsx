@@ -10,6 +10,7 @@ const PAGE_SIZE = 20
 
 export default function ObservabilityPage() {
   const { underTheHood } = useViewMode()
+  const dashboardUrl = import.meta.env.VITE_LANGFUSE_DASHBOARD_URL as string | undefined
   const [traces, setTraces] = useState<TraceListItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -82,6 +83,34 @@ export default function ObservabilityPage() {
             : ' Open a run to see how the pipeline spent its time.'}
         </p>
       </div>
+
+      <section className="rounded-lg border border-border bg-primary/30 p-4">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+          Analytics
+          <span className="text-[10px] font-normal uppercase tracking-wide text-mutedForeground">Langfuse</span>
+        </h2>
+        {dashboardUrl ? (
+          <>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <iframe
+                title="Langfuse dashboard"
+                src={dashboardUrl}
+                className="h-[420px] w-full bg-background"
+                loading="lazy"
+              />
+            </div>
+            {underTheHood && (
+              <p className="mt-2 break-all text-[11px] text-mutedForeground">embed: {dashboardUrl}</p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-mutedForeground">
+            Set <code className="text-foreground">VITE_LANGFUSE_DASHBOARD_URL</code> to a Langfuse shared-dashboard
+            URL to embed cost/latency/token charts here. (Iframes can be brittle behind auth/CSP; the documented
+            fallback is pulling aggregates via the Langfuse public API into a Recharts panel — spec 06.)
+          </p>
+        )}
+      </section>
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-mutedForeground">
