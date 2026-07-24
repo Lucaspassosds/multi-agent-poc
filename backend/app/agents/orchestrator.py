@@ -67,11 +67,13 @@ def _accum(total: dict, usage) -> None:
 
 
 async def _json(model, system, message, schema, max_tokens=1500):
-    # thinking_budget=0: structured extraction needs no chain-of-thought, and leaving it on
-    # can consume the whole output budget and truncate the JSON.
+    # thinking_budget=1: structured extraction needs no chain-of-thought, and leaving thinking
+    # on can consume the whole output budget and truncate the JSON. The SDK docs say 0 means
+    # "disabled", but the live API rejects 0 with 400 INVALID_ARGUMENT for gemini-flash-lite-latest
+    # (verified 2026-07-23) — 1 is the smallest accepted budget and is functionally equivalent.
     resp = await get_provider().complete(
         model=model, system=system, messages=[user(message)], max_tokens=max_tokens,
-        response_schema=schema, thinking_budget=0,
+        response_schema=schema, thinking_budget=1,
     )
     return json.loads(resp.text), resp.usage
 

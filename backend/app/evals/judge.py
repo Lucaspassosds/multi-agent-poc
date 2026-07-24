@@ -36,6 +36,6 @@ async def judge(case: dict, result: dict):
         messages=[user(prompt)],
         max_tokens=500,
         response_schema=JudgeVerdict,
-        thinking_budget=0,  # structured extraction — no reasoning budget to truncate the JSON
+        thinking_budget=1,  # smallest budget the live API accepts for this model; 0 gets 400 INVALID_ARGUMENT
     )
     return json.loads(resp.text), resp.usage
