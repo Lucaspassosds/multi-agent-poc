@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_dashboard_url: str = ""      # a shared Langfuse dashboard URL the Phase-E UI can iframe
 
     # --- Phase D depth knobs ---
     max_revisions: int = 2                # bounded revise loop cap (critique node)

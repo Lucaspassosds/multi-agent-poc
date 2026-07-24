@@ -1,46 +1,29 @@
-"""Phase D — observability surfacing that the Phase-E React panels consume.
+"""Observability surfacing that the React Run Inspector consumes.
 
-- /observability/config: hands the frontend the shared Langfuse dashboard URL to iframe
-  (embed-first per spec 06 F).
-- /observability/langfuse-metrics: the API-pull FALLBACK for when the embed is blocked by
-  CSP/auth — best-effort aggregates via the Langfuse public Metrics API. Fails soft to an
-  explanatory payload so the UI can show the in-app KPIs instead.
+- /observability/config: tells the frontend whether Langfuse is enabled at all.
+- /observability/metrics/{chart}: real Langfuse Metrics API v2 aggregates (observations,
+  cost, latency, scores), normalized in app/langfuse_metrics.py. Langfuse dashboards don't
+  support shareable/embeddable links, so this — not an iframe — is how the Run Inspector's
+  Analytics section gets its charts (spec 06's documented API-pull fallback).
 """
-import base64
+from datetime import datetime, timedelta, timezone
 
-import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from app import langfuse_client
-from app.config import settings
+from app import langfuse_client, langfuse_metrics
 
 router = APIRouter(prefix="/observability", tags=["observability"])
 
 
 @router.get("/config")
 async def config():
-    return {
-        "langfuse_enabled": langfuse_client.enabled,
-        "langfuse_dashboard_url": settings.langfuse_dashboard_url or None,
-    }
+    return {"langfuse_enabled": langfuse_client.enabled}
 
 
-@router.get("/langfuse-metrics")
-async def langfuse_metrics():
-    """Best-effort pull of daily cost/latency/token aggregates. Verify the exact Metrics API
-    query shape against the Langfuse docs at build time — this is the fallback, embed is primary."""
-    if not (settings.langfuse_public_key and settings.langfuse_secret_key):
-        return {"available": False, "reason": "no Langfuse keys configured"}
-    token = base64.b64encode(
-        f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
-    ).decode()
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"{settings.langfuse_base_url}/api/public/metrics/daily",
-                headers={"Authorization": f"Basic {token}"},
-            )
-            resp.raise_for_status()
-            return {"available": True, "data": resp.json()}
-    except Exception as exc:  # noqa: BLE001
-        return {"available": False, "reason": str(exc)}
+@router.get("/metrics/{chart}")
+async def metrics(chart: str, granularity: str = "day", hours: int = 24 * 7):
+    if chart not in langfuse_metrics.CHARTS:
+        raise HTTPException(status_code=400, detail=f"unknown chart {chart!r}, expected one of {langfuse_metrics.CHARTS}")
+    now = datetime.now(timezone.utc)
+    frm = now - timedelta(hours=hours)
+    return await langfuse_metrics.query(chart, granularity, frm.isoformat(), now.isoformat())

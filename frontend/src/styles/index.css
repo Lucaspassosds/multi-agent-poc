@@ -34,6 +34,14 @@ body {
   --viz-gridline: #1f2c47;
   --viz-text-secondary: #94a3b8;
   --viz-text-muted: #64748b;
+
+  /* Sequential single-hue (blue) ramp for an ORDINAL scale — the Analytics latency chart's
+     p50/p95/p99, which are one measure at three depths, not three independent identities.
+     Steps 300/450/600 per the dataviz skill's palette (light→dark = common→extreme); capped at
+     600, its documented dark-surface floor. */
+  --seq-blue-300: #6da7ec;
+  --seq-blue-450: #2a78d6;
+  --seq-blue-600: #184f95;
 }
 
 .tabular-nums {

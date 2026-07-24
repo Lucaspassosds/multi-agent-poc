@@ -5,6 +5,8 @@ import type {
   KbDocResource,
   KbIndexEntry,
   McpPrompt,
+  MetricsChart,
+  MetricsChartResponse,
   RetrievalMode,
   TicketListItem,
   TraceDetail,
@@ -184,4 +186,14 @@ export function getKbDoc(id: number): Promise<KbDocResource> {
 
 export function getMcpPrompts(): Promise<{ prompts: McpPrompt[] }> {
   return getJSON('/mcp/prompts')
+}
+
+// --- Analytics: Langfuse Metrics API v2, proxied + normalized by the backend (Langfuse doesn't
+// support shareable/embeddable dashboards, so this replaces the old iframe with real charts). ---
+export function getMetrics(
+  chart: MetricsChart,
+  granularity: 'hour' | 'day',
+  hours: number,
+): Promise<MetricsChartResponse> {
+  return getJSON(`/observability/metrics/${chart}?granularity=${granularity}&hours=${hours}`)
 }

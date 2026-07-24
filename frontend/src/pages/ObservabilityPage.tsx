@@ -3,15 +3,66 @@ import { Link } from 'react-router-dom'
 import { Warning } from '@phosphor-icons/react'
 import Badge from '../components/Badge'
 import KbBrowser from '../components/KbBrowser'
-import { getTrace, getTraces } from '../lib/api'
-import type { TraceDetail, TraceListItem } from '../lib/types'
+import MetricsChart from '../components/MetricsChart'
+import { getMetrics, getTrace, getTraces } from '../lib/api'
+import type { MetricsChart as MetricsChartKey, MetricsChartResponse, TraceDetail, TraceListItem } from '../lib/types'
 import { useViewMode } from '../lib/viewMode'
 
 const PAGE_SIZE = 20
 
+// One row per Analytics chart: which Langfuse Metrics API query it maps to (backend enum),
+// how its value is formatted, and its color assignment. Latency is one measure at three
+// depths (an ORDINAL scale) so it gets the sequential blue ramp; scores are independent
+// named metrics (categorical identity) so they get the app's fixed categorical hue order —
+// per the dataviz skill, hues are assigned by the job color does, never picked by eye.
+const ANALYTICS_CHARTS: {
+  key: MetricsChartKey
+  title: string
+  colors: string[]
+  emptyNote: string
+  formatValue: (v: number) => string
+}[] = [
+  {
+    key: 'observations',
+    title: 'Observations',
+    colors: ['var(--series-1)'],
+    emptyNote: 'No observations in this window.',
+    formatValue: (v) => v.toLocaleString(),
+  },
+  {
+    key: 'cost',
+    title: 'Total cost (USD)',
+    colors: ['var(--series-1)'],
+    emptyNote: 'No cost data in this window.',
+    formatValue: (v) => `$${v.toFixed(6)}`,
+  },
+  {
+    key: 'latency',
+    title: 'Latency — p50 / p95 / p99 (seconds)',
+    colors: ['var(--seq-blue-300)', 'var(--seq-blue-450)', 'var(--seq-blue-600)'],
+    emptyNote: 'No latency data in this window.',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'scores',
+    title: 'Eval scores — average by name',
+    colors: [
+      'var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)',
+      'var(--series-5)', 'var(--series-6)', 'var(--series-7)', 'var(--series-8)',
+    ],
+    emptyNote: 'No eval scores in this window — run an eval on the Quality Dashboard.',
+    formatValue: (v) => v.toFixed(2),
+  },
+]
+
+const RANGE_PRESETS = [
+  { hours: 24, label: '24h' },
+  { hours: 24 * 7, label: '7d' },
+  { hours: 24 * 30, label: '30d' }, // capped at 30d — Langfuse Hobby-tier retention (spec 06)
+]
+
 export default function ObservabilityPage() {
   const { underTheHood } = useViewMode()
-  const dashboardUrl = import.meta.env.VITE_LANGFUSE_DASHBOARD_URL as string | undefined
   const [traces, setTraces] = useState<TraceListItem[] | null>(null)
   const [total, setTotal] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -21,6 +72,27 @@ export default function ObservabilityPage() {
   const [compareIds, setCompareIds] = useState<number[]>([])
   const [compareData, setCompareData] = useState<TraceDetail[] | null>(null)
   const [comparing, setComparing] = useState(false)
+  const [rangeHours, setRangeHours] = useState(24 * 7)
+  const [granularity, setGranularity] = useState<'hour' | 'day'>('day')
+  const [metricsData, setMetricsData] = useState<Record<MetricsChartKey, MetricsChartResponse | null>>({
+    observations: null, cost: null, latency: null, scores: null,
+  })
+  const [metricsLoading, setMetricsLoading] = useState(false)
+
+  useEffect(() => {
+    setMetricsLoading(true)
+    Promise.all(
+      ANALYTICS_CHARTS.map((c) =>
+        getMetrics(c.key, granularity, rangeHours).catch((e) => ({ available: false, reason: String(e) })),
+      ),
+    ).then((results) => {
+      setMetricsData(Object.fromEntries(ANALYTICS_CHARTS.map((c, i) => [c.key, results[i]])) as Record<
+        MetricsChartKey,
+        MetricsChartResponse
+      >)
+      setMetricsLoading(false)
+    })
+  }, [rangeHours, granularity])
 
   function toggleCompare(id: number) {
     setCompareIds((prev) => {
@@ -257,25 +329,72 @@ export default function ObservabilityPage() {
           Analytics
           <span className="text-[10px] font-normal uppercase tracking-wide text-mutedForeground">Langfuse</span>
         </h2>
-        {dashboardUrl ? (
-          <>
-            <div className="overflow-hidden rounded-lg border border-border">
-              <iframe
-                title="Langfuse dashboard"
-                src={dashboardUrl}
-                className="h-[420px] w-full bg-background"
-                loading="lazy"
-              />
-            </div>
-            {underTheHood && (
-              <p className="mt-2 break-all text-[11px] text-mutedForeground">embed: {dashboardUrl}</p>
-            )}
-          </>
-        ) : (
+
+        {/* One filter row, above every chart it scopes — per the dataviz skill's convention. */}
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="flex gap-1">
+            {RANGE_PRESETS.map((r) => (
+              <button
+                key={r.hours}
+                type="button"
+                onClick={() => setRangeHours(r.hours)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  rangeHours === r.hours
+                    ? 'border-accent/40 bg-accent/10 text-accent'
+                    : 'border-border text-mutedForeground hover:text-foreground'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <label className="text-xs text-mutedForeground">
+            Granularity
+            <select
+              value={granularity}
+              onChange={(e) => setGranularity(e.target.value as 'hour' | 'day')}
+              className="ml-2 rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
+            >
+              <option value="hour">hourly</option>
+              <option value="day">daily</option>
+            </select>
+          </label>
+        </div>
+
+        {ANALYTICS_CHARTS.every((c) => metricsData[c.key]?.available === false) ? (
           <p className="text-sm text-mutedForeground">
-            Set <code className="text-foreground">VITE_LANGFUSE_DASHBOARD_URL</code> to a Langfuse shared-dashboard
-            URL to embed cost/latency/token charts here. (Iframes can be brittle behind auth/CSP; the documented
-            fallback is pulling aggregates via the Langfuse public API into a Recharts panel — spec 06.)
+            {metricsData.observations?.reason ?? 'Langfuse metrics are unavailable right now.'}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {ANALYTICS_CHARTS.map((c) => {
+              const data = metricsData[c.key]
+              if (data && data.available === false) {
+                return (
+                  <div key={c.key} className="rounded-lg border border-border bg-background/40 p-3 text-xs text-mutedForeground">
+                    {c.title}: {data.reason ?? 'unavailable'}
+                  </div>
+                )
+              }
+              return (
+                <MetricsChart
+                  key={c.key}
+                  title={c.title}
+                  series={data?.series ?? []}
+                  colors={c.colors}
+                  loading={metricsLoading}
+                  emptyNote={c.emptyNote}
+                  formatValue={c.formatValue}
+                />
+              )
+            })}
+          </div>
+        )}
+
+        {underTheHood && (
+          <p className="mt-2 text-[11px] text-mutedForeground">
+            window: last {RANGE_PRESETS.find((r) => r.hours === rangeHours)?.label} · granularity {granularity} ·{' '}
+            {Object.values(metricsData).some((d) => d?.cached) ? 'cache hit' : 'fresh'}
           </p>
         )}
       </section>

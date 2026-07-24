@@ -286,3 +286,26 @@ export interface McpPrompt {
   description: string
   template: string // seed text inserted into the composer
 }
+
+export type MetricsChart = 'observations' | 'cost' | 'latency' | 'scores'
+
+export interface MetricsPoint {
+  t: string // ISO date, e.g. "2026-07-24"
+  v: number
+}
+
+export interface MetricsSeries {
+  label: string
+  points: MetricsPoint[]
+}
+
+/** GET /observability/metrics/{chart} (backend/app/langfuse_metrics.py). Fails soft — when
+ * Langfuse is disabled or the call errors, `available` is false and `series` is absent. */
+export interface MetricsChartResponse {
+  available: boolean
+  reason?: string
+  chart?: MetricsChart
+  granularity?: string
+  series?: MetricsSeries[]
+  cached?: boolean
+}
