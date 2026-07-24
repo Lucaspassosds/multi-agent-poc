@@ -1,14 +1,16 @@
-import { CheckCircle, PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
+import { PaperPlaneTilt, Waveform } from '@phosphor-icons/react'
 import { Fragment, useEffect, useReducer, useRef, useState } from 'react'
 import ClassificationChips from '../components/ClassificationChips'
 import CitationBadge from '../components/CitationBadge'
 import HowItWorks from '../components/HowItWorks'
+import ReplyCard from '../components/ReplyCard'
 import SpanWaterfall from '../components/SpanWaterfall'
 import TicketSidebar from '../components/TicketSidebar'
 import { getTicket, getTickets, getTrace } from '../lib/api'
 import { getOrCreateSessionId } from '../lib/session'
 import { streamTriage } from '../lib/sse'
 import type { CitedChunk, Classification, TicketListItem, TriageResult } from '../lib/types'
+import { useViewMode } from '../lib/viewMode'
 import { seriesKeyForName, triageRestoreRows, type WaterfallRow } from '../lib/waterfall'
 
 const PRESETS = [
@@ -123,6 +125,7 @@ export default function TriagePage() {
   const [message, setMessage] = useState('')
   const [tickets, setTickets] = useState<TicketListItem[]>([])
   const [state, dispatch] = useReducer(runReducer, IDLE)
+  const { underTheHood } = useViewMode()
   const running = state.status === 'running'
   const startedAt = useRef(0)
   const rowStart = useRef<Map<string, number>>(new Map())
@@ -316,26 +319,10 @@ export default function TriagePage() {
         )}
 
         {result && (
-          <section className="space-y-3">
+          <>
             <ClassificationChips classification={result.classification} />
-            <div className="rounded-lg border border-border bg-primary p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <CheckCircle size={16} weight="regular" className="text-accent" />
-                  Final reply
-                </h2>
-                <span className="text-xs text-mutedForeground tabular-nums">
-                  {result.total_seconds}s · ${result.cost_usd.toFixed(6)} · {result.parallelism.speedup}× parallel speedup
-                </span>
-              </div>
-              <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
-                {renderReplyWithCitations(result.final_reply, result.evidence.flatMap((e) => e.cited))}
-              </p>
-              {result.revised && (
-                <p className="mt-2 text-xs text-mutedForeground">Revised once after critic feedback.</p>
-              )}
-            </div>
-          </section>
+            <ReplyCard result={result} underTheHood={underTheHood} renderReply={renderReplyWithCitations} />
+          </>
         )}
       </div>
     </div>
