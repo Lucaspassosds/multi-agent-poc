@@ -4,6 +4,7 @@ All of these go through the provider-neutral interface, so they work unchanged w
 LLM_PROVIDER flips to anthropic.
 """
 import json
+import re
 import time
 
 from fastapi import APIRouter
@@ -79,6 +80,10 @@ _BIG_CONTEXT = (
        "Chargebacks cannot be double-refunded. Subscriptions are refundable within 14 days of renewal. ") * 60
 )
 
+_VOLATILE_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}T|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"  # ISO timestamps / UUIDs
+)
+
 
 @router.post("/cache-demo")
 async def cache_demo():
@@ -94,15 +99,21 @@ async def cache_demo():
         )
         out.append(resp.usage.__dict__)
     hit = out[1]["cached_tokens"] > 0
+    prefix_ok = _VOLATILE_RE.search(_BIG_CONTEXT) is None
     return {
         "call_1": out[0],
         "call_2": out[1],
         "cache_hit_on_second": hit,
+        "prefix_cache_correct": prefix_ok,
         "note": None if hit else (
             "No cache hit: the Gemini FREE tier gates prompt caching (implicit off; explicit storage "
             "quota exhausted). The interface already normalizes cached_tokens across providers, so this "
             "becomes a deterministic hit once LLM_PROVIDER=anthropic (cache_control) or on a paid tier."
         ),
+        "prefix_note": ("Stable KB+system prefix, volatile ticket AFTER the breakpoint, no "
+                        "timestamps/UUIDs — so the prefix is a deterministic cache key. On free "
+                        "Gemini caching is gated (cache_read=0); on Claude/paid this prefix yields "
+                        "cache_read_input_tokens > 0."),
     }
 
 
