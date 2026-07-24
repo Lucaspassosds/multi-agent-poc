@@ -42,4 +42,4 @@ body {
 
 /* Phase E type scale (documented, not enforced): screen title = text-xl font-semibold;
    section heading = text-sm font-medium; body = text-sm; meta/label = text-xs text-mutedForeground.
-   Primitives (Card/Badge/SectionHeading) encode these so screens stay consistent. */
+   Primitives (Card/Badge) encode these so screens stay consistent. */

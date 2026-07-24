@@ -19,8 +19,6 @@ export default {
         border: '#475569',
         // Phase E semantic aliases (intent names over raw hex; values match existing usage).
         surface: '#1E293B',
-        surfaceMuted: '#172033',
-        success: '#22C55E',
         warning: '#C98500',
       },
     },
