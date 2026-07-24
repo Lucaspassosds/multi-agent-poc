@@ -55,7 +55,13 @@ def lf_span(name: str) -> Iterator[Any]:
     if not enabled:
         yield _NoopObs()
         return
-    with _client.start_as_current_span(name=name) as s:
+    with contextlib.ExitStack() as stack:
+        try:
+            s = stack.enter_context(_client.start_as_current_span(name=name))
+        except Exception as exc:  # noqa: BLE001 - never let telemetry break the request path
+            log.warning("Langfuse start_as_current_span(%s) failed: %s", name, exc)
+            yield _NoopObs()
+            return
         yield s
 
 
@@ -65,7 +71,15 @@ def lf_generation(name: str, model: str | None, input_: Any = None) -> Iterator[
     if not enabled:
         yield _NoopObs()
         return
-    with _client.start_as_current_generation(name=name, model=model, input=input_) as g:
+    with contextlib.ExitStack() as stack:
+        try:
+            g = stack.enter_context(
+                _client.start_as_current_generation(name=name, model=model, input=input_)
+            )
+        except Exception as exc:  # noqa: BLE001 - never let telemetry break the request path
+            log.warning("Langfuse start_as_current_generation(%s) failed: %s", name, exc)
+            yield _NoopObs()
+            return
         yield g
 
 
@@ -73,11 +87,20 @@ def set_trace_attributes(*, session_id: str | None = None, tags: list[str] | Non
                          name: str | None = None, output: Any = None) -> None:
     if not enabled:
         return
-    _client.update_current_trace(session_id=session_id, tags=tags, name=name, output=output)
+    try:
+        _client.update_current_trace(session_id=session_id, tags=tags, name=name, output=output)
+    except Exception as exc:  # noqa: BLE001 - never let telemetry break the request path
+        log.warning("Langfuse update_current_trace failed: %s", exc)
 
 
 def current_trace_id() -> str | None:
-    return _client.get_current_trace_id() if enabled else None
+    if not enabled:
+        return None
+    try:
+        return _client.get_current_trace_id()
+    except Exception as exc:  # noqa: BLE001 - never let telemetry break the request path
+        log.warning("Langfuse get_current_trace_id failed: %s", exc)
+        return None
 
 
 def current_trace_url() -> str | None:
